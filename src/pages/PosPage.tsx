@@ -19,6 +19,9 @@ import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ReceiptModal } from '../components/ReceiptModal';
+import { ActionConfirmModal } from '../components/ActionConfirmModal';
+import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
+import { generateId } from '../utils/format';
 import { db, getProductCategories } from '../db';
 
 interface PosPageProps {
@@ -40,6 +43,24 @@ export const PosPage: React.FC<PosPageProps> = ({
   const [completedSaleItems, setCompletedSaleItems] = useState<SaleItem[]>([]);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [scannerNotification, setScannerNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Cart Delete & Clear Confirmation State
+  const [cartItemToDelete, setCartItemToDelete] = useState<CartItem | null>(null);
+  const [isConfirmDeleteCartOpen, setIsConfirmDeleteCartOpen] = useState(false);
+  const [isConfirmClearCartOpen, setIsConfirmClearCartOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
+    const id = generateId('toast');
+    setToasts((prev) => [...prev, { id, type, title, description }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -159,19 +180,39 @@ export const PosPage: React.FC<PosPageProps> = ({
     });
   };
 
-  // Remove Item from Cart
-  const handleRemoveFromCart = (productId: string) => {
+  // Remove Item from Cart with theme confirmation modal
+  const handlePromptRemoveFromCart = (item: CartItem) => {
     playKeyClick();
-    setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    setCartItemToDelete(item);
+    setIsConfirmDeleteCartOpen(true);
   };
 
-  // Clear entire Cart
-  const handleClearCart = () => {
+  const executeRemoveFromCart = () => {
+    if (!cartItemToDelete) return;
+    setCart((prev) => prev.filter((item) => item.product.id !== cartItemToDelete.product.id));
+    playKeyClick();
+    setIsConfirmDeleteCartOpen(false);
+    addToast(
+      'delete',
+      'Item Dihapus dari Keranjang',
+      `"${cartItemToDelete.product.name}" (${cartItemToDelete.quantity} ${cartItemToDelete.product.unit || 'pcs'}) telah dikeluarkan.`
+    );
+    setCartItemToDelete(null);
+  };
+
+  // Clear entire Cart with theme confirmation modal
+  const handlePromptClearCart = () => {
     if (cart.length === 0) return;
-    if (window.confirm('Kosongkan keranjang belanja kasir saat ini?')) {
-      playKeyClick();
-      setCart([]);
-    }
+    playKeyClick();
+    setIsConfirmClearCartOpen(true);
+  };
+
+  const executeClearCart = () => {
+    const totalCount = cart.length;
+    setCart([]);
+    playKeyClick();
+    setIsConfirmClearCartOpen(false);
+    addToast('delete', 'Keranjang Dikosongkan', `Seluruh ${totalCount} barang belanjaan telah dibatalkan.`);
   };
 
   // Barcode Handler (from input or physical scanner)
@@ -243,7 +284,7 @@ export const PosPage: React.FC<PosPageProps> = ({
       onProductStockUpdate();
     } catch (err) {
       console.error('Gagal mencatat transaksi:', err);
-      alert('Terjadi kendala saat menyimpan transaksi ke database lokal.');
+      addToast('warning', 'Kendala Transaksi', 'Terjadi kendala saat menyimpan transaksi ke database lokal.');
     }
   };
 
@@ -475,7 +516,7 @@ export const PosPage: React.FC<PosPageProps> = ({
               {cart.length > 0 && (
                 <button
                   type="button"
-                  onClick={handleClearCart}
+                  onClick={handlePromptClearCart}
                   className="text-xs font-bold text-status-dangerText hover:bg-status-dangerBg/50 px-2.5 py-1.5 rounded-xl transition-colors flex items-center gap-1"
                   title="Batalkan Seluruh Keranjang"
                 >
@@ -505,7 +546,7 @@ export const PosPage: React.FC<PosPageProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleRemoveFromCart(item.product.id)}
+                        onClick={() => handlePromptRemoveFromCart(item)}
                         className="text-ink-subtle hover:text-status-dangerText p-1 transition-colors"
                         title="Hapus barang ini"
                       >
@@ -626,6 +667,69 @@ export const PosPage: React.FC<PosPageProps> = ({
         sale={completedSale}
         items={completedSaleItems}
       />
+
+      {/* Confirmation Modal for DELETING Item from Cart */}
+      <ActionConfirmModal
+        isOpen={isConfirmDeleteCartOpen}
+        onClose={() => {
+          setIsConfirmDeleteCartOpen(false);
+          setCartItemToDelete(null);
+        }}
+        onConfirm={executeRemoveFromCart}
+        type="delete"
+        title="Hapus Barang dari Keranjang?"
+        description="Barang berikut akan dikeluarkan dari daftar belanja kasir:"
+        details={
+          cartItemToDelete
+            ? [
+                {
+                  label: 'Nama Barang',
+                  value: cartItemToDelete.product.name,
+                  highlight: true,
+                },
+                {
+                  label: 'Jumlah di Keranjang',
+                  value: `${cartItemToDelete.quantity} ${cartItemToDelete.product.unit || 'pcs'}`,
+                },
+                {
+                  label: 'Harga Satuan',
+                  value: formatRupiah(cartItemToDelete.product.selling_price),
+                },
+                {
+                  label: 'Subtotal Pengurangan',
+                  value: formatRupiah(cartItemToDelete.subtotal),
+                  highlight: true,
+                },
+              ]
+            : []
+        }
+        confirmText="Ya, Hapus dari Keranjang"
+        cancelText="Batal"
+      />
+
+      {/* Confirmation Modal for CLEARING Cart */}
+      <ActionConfirmModal
+        isOpen={isConfirmClearCartOpen}
+        onClose={() => setIsConfirmClearCartOpen(false)}
+        onConfirm={executeClearCart}
+        type="warning"
+        title="Kosongkan Semua Keranjang?"
+        description="Seluruh belanjaan kasir saat ini akan dibatalkan dan dikosongkan secara bersih:"
+        details={[
+          { label: 'Ragam Barang', value: `${cart.length} jenis produk` },
+          { label: 'Total Unit Barang', value: `${totalItemsCount} unit fisik` },
+          {
+            label: 'Total Tagihan Saat Ini',
+            value: formatRupiah(totalAmount),
+            highlight: true,
+          },
+        ]}
+        confirmText="Ya, Kosongkan Keranjang"
+        cancelText="Kembali ke Kasir"
+      />
+
+      {/* Floating Feedback Toast Alerts */}
+      <ToastAlert toasts={toasts} onDismiss={handleDismissToast} />
     </div>
   );
 };

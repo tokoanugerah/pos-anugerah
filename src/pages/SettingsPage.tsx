@@ -25,7 +25,9 @@ import {
 } from '../db';
 import type { StoreSettings } from '../types';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
-import { formatDateIndo } from '../utils/format';
+import { formatDateIndo, generateId } from '../utils/format';
+import { ActionConfirmModal } from '../components/ActionConfirmModal';
+import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 
 interface SettingsPageProps {
   onRefreshAll: () => void;
@@ -41,6 +43,38 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [categoryAlert, setCategoryAlert] = useState<string | null>(null);
 
+  // Theme-Matching Confirmation Modal & Toast States
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
+  const [isConfirmResetCategoryOpen, setIsConfirmResetCategoryOpen] = useState(false);
+  const [isConfirmResetSeedOpen, setIsConfirmResetSeedOpen] = useState(false);
+
+  interface PendingRestore {
+    products: unknown[];
+    sales: unknown[];
+    sale_items: unknown[];
+    expenses: unknown[];
+    stock_audits: unknown[];
+    monthly_summaries: unknown[];
+    importedSettings?: StoreSettings;
+  }
+  const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null);
+  const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
+    const id = generateId('toast');
+    setToasts((prev) => [...prev, { id, type, title, description }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     const updatedSettings = {
@@ -50,6 +84,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     saveStoreSettings(updatedSettings);
     playSuccessBeep();
     setSaveAlert(true);
+    addToast('success', 'Pengaturan Profil Disimpan', 'Nama toko, alamat, dan nomor kontak telah diperbarui.');
     setTimeout(() => setSaveAlert(false), 2500);
     onRefreshAll();
   };
@@ -64,6 +99,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     if (exists) {
       playErrorBeep();
       setCategoryAlert(`Kategori "${trimmed}" sudah ada di daftar.`);
+      addToast('warning', 'Kategori Duplikat', `Kategori "${trimmed}" sudah terdaftar.`);
       setTimeout(() => setCategoryAlert(null), 2500);
       return;
     }
@@ -74,36 +110,67 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     setNewCategoryInput('');
     playSuccessBeep();
     setCategoryAlert(`Kategori "${trimmed}" berhasil ditambahkan!`);
+    addToast('success', 'Kategori Ditambahkan', `"${trimmed}" kini dapat dipilih saat input barang baru.`);
     setTimeout(() => setCategoryAlert(null), 2500);
     onRefreshAll();
   };
 
-  const handleDeleteCategory = (catToDelete: string) => {
+  const handlePromptDeleteCategory = (catToDelete: string) => {
     if (categories.length <= 1) {
-      alert('Minimal harus ada 1 kategori barang di sistem.');
+      addToast('warning', 'Tidak Dapat Dihapus', 'Minimal harus ada 1 kategori barang di sistem toko.');
       return;
     }
-    if (confirm(`Hapus kategori "${catToDelete}"? Produk yang sudah ada tetap aman, namun kategori ini tidak akan muncul lagi sebagai pilihan kategori produk baru.`)) {
-      playKeyClick();
-      const updated = categories.filter((c) => c !== catToDelete);
-      setCategories(updated);
-      saveProductCategories(updated);
-      playSuccessBeep();
-      setCategoryAlert(`Kategori "${catToDelete}" berhasil dihapus.`);
-      setTimeout(() => setCategoryAlert(null), 2500);
-      onRefreshAll();
-    }
+    playKeyClick();
+    setCategoryToDelete(catToDelete);
+    setIsConfirmDeleteCategoryOpen(true);
   };
 
-  const handleResetCategories = () => {
-    if (confirm('Kembalikan daftar kategori barang ke pilihan bawaan standar sistem Anugerah Store?')) {
-      playKeyClick();
-      setCategories(DEFAULT_CATEGORIES);
-      saveProductCategories(DEFAULT_CATEGORIES);
+  const executeDeleteCategory = () => {
+    if (!categoryToDelete) return;
+    const updated = categories.filter((c) => c !== categoryToDelete);
+    setCategories(updated);
+    saveProductCategories(updated);
+    playKeyClick();
+    setIsConfirmDeleteCategoryOpen(false);
+    addToast('delete', 'Kategori Dihapus', `Kategori "${categoryToDelete}" telah dihapus.`);
+    setCategoryAlert(`Kategori "${categoryToDelete}" berhasil dihapus.`);
+    setTimeout(() => setCategoryAlert(null), 2500);
+    setCategoryToDelete(null);
+    onRefreshAll();
+  };
+
+  const handlePromptResetCategories = () => {
+    playKeyClick();
+    setIsConfirmResetCategoryOpen(true);
+  };
+
+  const executeResetCategories = () => {
+    setCategories(DEFAULT_CATEGORIES);
+    saveProductCategories(DEFAULT_CATEGORIES);
+    playSuccessBeep();
+    setIsConfirmResetCategoryOpen(false);
+    addToast('success', 'Kategori Direset', 'Daftar kategori dikembalikan ke pilihan standar sistem.');
+    setCategoryAlert('Daftar kategori berhasil dikembalikan ke standar awal.');
+    setTimeout(() => setCategoryAlert(null), 2500);
+    onRefreshAll();
+  };
+
+  const handlePromptResetSeed = () => {
+    playKeyClick();
+    setIsConfirmResetSeedOpen(true);
+  };
+
+  const executeResetSeed = async () => {
+    try {
+      await resetDatabaseToInitial();
       playSuccessBeep();
-      setCategoryAlert('Daftar kategori berhasil dikembalikan ke standar awal.');
-      setTimeout(() => setCategoryAlert(null), 2500);
+      setIsConfirmResetSeedOpen(false);
+      setRestoreStats('Database berhasil dimuat ulang ke data contoh awal!');
+      addToast('success', 'Reset Demo Berhasil', 'Database toko telah dimuat ulang dengan data contoh awal.');
       onRefreshAll();
+    } catch (err) {
+      console.error(err);
+      addToast('warning', 'Gagal Reset', 'Terjadi kesalahan saat memuat data contoh.');
     }
   };
 
@@ -172,7 +239,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     } catch (err) {
       console.error('Gagal mencadangkan database:', err);
       playErrorBeep();
-      alert('Terjadi kesalahan saat mengumpulkan data cadangan.');
+      addToast('warning', 'Gagal Mencadangkan', 'Terjadi kesalahan saat mengumpulkan data cadangan.');
     }
   };
 
@@ -200,60 +267,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
           throw new Error('Format file tidak valid. Berkas JSON harus memuat data produk dan penjualan Anugerah Store.');
         }
 
-        const confirmText =
-          `Ditemukan data cadangan:\n` +
-          `• Produk: ${products.length} item\n` +
-          `• Transaksi Kasir: ${sales.length} nota\n` +
-          `• Rincian Item: ${sale_items.length} baris\n` +
-          `• Catatan Pengeluaran: ${expenses.length} biaya\n` +
-          `• Riwayat Stok Opname: ${stock_audits.length} audit\n\n` +
-          `Apakah Anda yakin ingin memulihkan seluruh data ini? Data saat ini akan digantikan oleh isi file cadangan.`;
-
-        if (!confirm(confirmText)) {
-          // Reset file input
-          e.target.value = '';
-          return;
-        }
-
-        // Perform atomic restore in transaction
-        await db.transaction(
-          'rw',
-          [db.products, db.sales, db.sale_items, db.expenses, db.stock_audits, db.monthly_summaries],
-          async () => {
-            await db.products.clear();
-            await db.sales.clear();
-            await db.sale_items.clear();
-            await db.expenses.clear();
-            await db.stock_audits.clear();
-            await db.monthly_summaries.clear();
-
-            if (products.length > 0) await db.products.bulkAdd(products);
-            if (sales.length > 0) await db.sales.bulkAdd(sales);
-            if (sale_items.length > 0) await db.sale_items.bulkAdd(sale_items);
-            if (expenses.length > 0) await db.expenses.bulkAdd(expenses);
-            if (stock_audits.length > 0) await db.stock_audits.bulkAdd(stock_audits);
-            if (monthly_summaries.length > 0) await db.monthly_summaries.bulkAdd(monthly_summaries);
-          }
-        );
-
-        if (importedSettings) {
-          saveStoreSettings(importedSettings);
-          setSettings(importedSettings);
-          if (Array.isArray(importedSettings.categories) && importedSettings.categories.length > 0) {
-            setCategories(importedSettings.categories);
-            saveProductCategories(importedSettings.categories);
-          }
-        }
-
-        playSuccessBeep();
-        setRestoreStats(
-          `Pemulihan Berhasil! ${products.length} produk, ${sales.length} transaksi, dan ${expenses.length} catatan pengeluaran berhasil dipulihkan secara utuh.`
-        );
-        onRefreshAll();
+        setPendingRestore({
+          products,
+          sales,
+          sale_items,
+          expenses,
+          stock_audits,
+          monthly_summaries,
+          importedSettings,
+        });
+        playKeyClick();
+        setIsConfirmRestoreOpen(true);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         playErrorBeep();
-        alert('Gagal memulihkan file cadangan: ' + msg);
+        addToast('warning', 'Format File Salah', msg);
       } finally {
         e.target.value = '';
       }
@@ -261,14 +289,65 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     reader.readAsText(file);
   };
 
-  // Reset to default seed
-  const handleResetSeed = async () => {
-    if (confirm('Apakah Anda yakin ingin me-reset database ke data contoh awal Anugerah Store? Data transaksi saat ini akan dihapus.')) {
-      playKeyClick();
-      await resetDatabaseToInitial();
+  const executeRestoreBackup = async () => {
+    if (!pendingRestore) return;
+    try {
+      const {
+        products,
+        sales,
+        sale_items,
+        expenses,
+        stock_audits,
+        monthly_summaries,
+        importedSettings,
+      } = pendingRestore;
+
+      // Perform atomic restore in transaction
+      await db.transaction(
+        'rw',
+        [db.products, db.sales, db.sale_items, db.expenses, db.stock_audits, db.monthly_summaries],
+        async () => {
+          await db.products.clear();
+          await db.sales.clear();
+          await db.sale_items.clear();
+          await db.expenses.clear();
+          await db.stock_audits.clear();
+          await db.monthly_summaries.clear();
+
+          if (products.length > 0) await db.products.bulkAdd(products as never);
+          if (sales.length > 0) await db.sales.bulkAdd(sales as never);
+          if (sale_items.length > 0) await db.sale_items.bulkAdd(sale_items as never);
+          if (expenses.length > 0) await db.expenses.bulkAdd(expenses as never);
+          if (stock_audits.length > 0) await db.stock_audits.bulkAdd(stock_audits as never);
+          if (monthly_summaries.length > 0) await db.monthly_summaries.bulkAdd(monthly_summaries as never);
+        }
+      );
+
+      if (importedSettings) {
+        saveStoreSettings(importedSettings);
+        setSettings(importedSettings);
+        if (Array.isArray(importedSettings.categories) && importedSettings.categories.length > 0) {
+          setCategories(importedSettings.categories);
+          saveProductCategories(importedSettings.categories);
+        }
+      }
+
       playSuccessBeep();
-      setRestoreStats('Database berhasil dimuat ulang ke data contoh awal!');
+      setIsConfirmRestoreOpen(false);
+      setRestoreStats(
+        `Pemulihan Berhasil! ${products.length} produk, ${sales.length} transaksi, dan ${expenses.length} catatan pengeluaran berhasil dipulihkan secara utuh.`
+      );
+      addToast(
+        'success',
+        'Data Toko Berhasil Dipulihkan',
+        `${products.length} produk & ${sales.length} transaksi telah aktif kembali.`
+      );
+      setPendingRestore(null);
       onRefreshAll();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      playErrorBeep();
+      addToast('warning', 'Gagal Memulihkan', msg);
     }
   };
 
@@ -362,7 +441,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
                     <span>{cat}</span>
                     <button
                       type="button"
-                      onClick={() => handleDeleteCategory(cat)}
+                      onClick={() => handlePromptDeleteCategory(cat)}
                       className="text-ink-subtle hover:text-status-dangerText transition-colors p-0.5 rounded-md hover:bg-white"
                       title={`Hapus kategori ${cat}`}
                     >
@@ -379,7 +458,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
               </span>
               <button
                 type="button"
-                onClick={handleResetCategories}
+                onClick={handlePromptResetCategories}
                 className="text-xs text-ink-subtle hover:text-forest font-bold flex items-center gap-1 transition-colors"
                 title="Kembalikan daftar ke bawaan standar sistem"
               >
@@ -454,7 +533,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
               </span>
               <button
                 type="button"
-                onClick={handleResetSeed}
+                onClick={handlePromptResetSeed}
                 className="text-xs text-status-dangerText hover:underline font-bold flex items-center gap-1"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -546,6 +625,115 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for DELETING Category */}
+      <ActionConfirmModal
+        isOpen={isConfirmDeleteCategoryOpen}
+        onClose={() => {
+          setIsConfirmDeleteCategoryOpen(false);
+          setCategoryToDelete(null);
+        }}
+        onConfirm={executeDeleteCategory}
+        type="delete"
+        title="Hapus Kategori Barang?"
+        description="Kategori ini tidak akan muncul lagi sebagai opsi pengelompokan produk baru di kasir:"
+        details={
+          categoryToDelete
+            ? [
+                { label: 'Nama Kategori', value: categoryToDelete, highlight: true },
+                { label: 'Tipe', value: 'Kategori Produk Toko' },
+              ]
+            : []
+        }
+        confirmText="Ya, Hapus Kategori"
+        cancelText="Batal"
+      />
+
+      {/* Confirmation Modal for RESETTING Categories to Default */}
+      <ActionConfirmModal
+        isOpen={isConfirmResetCategoryOpen}
+        onClose={() => setIsConfirmResetCategoryOpen(false)}
+        onConfirm={executeResetCategories}
+        type="warning"
+        title="Kembalikan Kategori ke Standar?"
+        description="Daftar kategori produk akan dikembalikan ke 8 kategori bawaan sistem Anugerah Store:"
+        details={[
+          {
+            label: 'Kategori Standar',
+            value: DEFAULT_CATEGORIES.join(', '),
+          },
+        ]}
+        confirmText="Ya, Reset ke Standar"
+        cancelText="Batal"
+      />
+
+      {/* Confirmation Modal for RESETTING Seed to Demo */}
+      <ActionConfirmModal
+        isOpen={isConfirmResetSeedOpen}
+        onClose={() => setIsConfirmResetSeedOpen(false)}
+        onConfirm={executeResetSeed}
+        type="warning"
+        title="Muat Ulang Data Contoh Awal (Demo Reset)?"
+        description="Peringatan: Seluruh data produk dan riwayat transaksi kasir yang ada saat ini akan digantikan dengan data contoh awal."
+        details={[
+          {
+            label: 'Tindakan',
+            value: 'Reset Total Database Lokal',
+            highlight: true,
+          },
+          {
+            label: 'Dampak',
+            value: 'Data transaksi yang belum dicadangkan ke JSON akan hilang',
+          },
+        ]}
+        confirmText="Ya, Muat Ulang Data Contoh"
+        cancelText="Batal"
+      />
+
+      {/* Confirmation Modal for RESTORING JSON Backup */}
+      <ActionConfirmModal
+        isOpen={isConfirmRestoreOpen}
+        onClose={() => {
+          setIsConfirmRestoreOpen(false);
+          setPendingRestore(null);
+        }}
+        onConfirm={executeRestoreBackup}
+        type="warning"
+        title="Konfirmasi Pemulihan Berkas Cadangan (JSON)"
+        description="Data saat ini akan digantikan secara utuh oleh isi file cadangan yang diunggah:"
+        details={
+          pendingRestore
+            ? [
+                {
+                  label: 'Data Produk Terdaftar',
+                  value: `${pendingRestore.products.length} item barang`,
+                  highlight: true,
+                },
+                {
+                  label: 'Riwayat Transaksi Kasir',
+                  value: `${pendingRestore.sales.length} nota transaksi`,
+                },
+                {
+                  label: 'Rincian Item Terjual',
+                  value: `${pendingRestore.sale_items.length} baris barang`,
+                },
+                {
+                  label: 'Catatan Pengeluaran & Biaya',
+                  value: `${pendingRestore.expenses.length} data biaya`,
+                },
+                {
+                  label: 'Riwayat Stok Opname',
+                  value: `${pendingRestore.stock_audits.length} catatan audit`,
+                },
+              ]
+            : []
+        }
+        confirmText="Ya, Pulihkan Sekarang"
+        cancelText="Batalkan Pemulihan"
+      />
+
+      {/* Floating Feedback Toast Alerts */}
+      <ToastAlert toasts={toasts} onDismiss={handleDismissToast} />
     </div>
   );
 };

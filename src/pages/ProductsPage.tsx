@@ -14,6 +14,8 @@ import type { Product } from '../types';
 import { formatRupiah, formatNumber, generateId } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { ActionConfirmModal } from '../components/ActionConfirmModal';
+import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { db, getProductCategories } from '../db';
 
 interface ProductsPageProps {
@@ -31,6 +33,26 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Confirmation Modals State
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isConfirmEditOpen, setIsConfirmEditOpen] = useState(false);
+
+  // Toast feedback state
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
+    const id = generateId('toast');
+    setToasts((prev) => [...prev, { id, type, title, description }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Form State using Strings to eliminate sticky leading zero bug (024500)
   const [formBarcode, setFormBarcode] = useState('');
@@ -127,21 +149,27 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const formStockQuantity = Number(formStockQuantityStr) || 0;
   const formMinStockAlert = Number(formMinStockAlertStr) || 1;
 
-  // Save Product (Add or Update)
+  // Prompt Save Product: if editing, triggers ActionConfirmModal first
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formBarcode.trim() || !formName.trim()) {
       playErrorBeep();
-      alert('Mohon isi nomor barcode dan nama barang!');
+      addToast('warning', 'Data Belum Lengkap', 'Mohon isi nomor barcode dan nama barang.');
       return;
     }
 
-    if (formSellingPrice < formCostPrice) {
-      if (!confirm('Peringatan: Harga jual lebih rendah dari harga modal (rugi). Tetap simpan?')) {
-        return;
-      }
+    // If editing existing product, ask confirmation with detailed breakdown
+    if (editingProduct) {
+      playKeyClick();
+      setIsConfirmEditOpen(true);
+      return;
     }
 
+    // If adding a brand new product
+    await executeSaveProduct();
+  };
+
+  const executeSaveProduct = async () => {
     try {
       const nowIso = new Date().toISOString();
 
@@ -157,11 +185,24 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           min_stock_alert: formMinStockAlert,
           updated_at: nowIso,
         });
+
+        playSuccessBeep();
+        setIsConfirmEditOpen(false);
+        setIsModalOpen(false);
+        addToast(
+          'success',
+          'Perubahan Produk Disimpan',
+          `Data produk "${formName}" berhasil diperbarui di katalog toko.`
+        );
       } else {
         const existing = await db.products.where('barcode').equals(formBarcode.trim()).first();
         if (existing) {
           playErrorBeep();
-          alert(`Barcode ${formBarcode} sudah digunakan oleh produk "${existing.name}". Silakan gunakan barcode lain!`);
+          addToast(
+            'warning',
+            'Barcode Duplikat',
+            `Barcode ${formBarcode} sudah digunakan oleh "${existing.name}". Gunakan barcode lain!`
+          );
           return;
         }
 
@@ -180,27 +221,46 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           updated_at: nowIso,
         };
         await db.products.add(newProduct);
+
+        playSuccessBeep();
+        setIsModalOpen(false);
+        addToast(
+          'success',
+          'Produk Berhasil Ditambahkan',
+          `"${formName}" telah terdaftar ke dalam stok toko.`
+        );
       }
 
-      playSuccessBeep();
-      setIsModalOpen(false);
       onRefresh();
     } catch (err) {
       console.error('Gagal menyimpan produk:', err);
-      alert('Gagal menyimpan produk ke basis data.');
+      addToast('warning', 'Gagal Menyimpan', 'Terjadi kesalahan sistem saat menyimpan ke basis data.');
     }
   };
 
-  // Delete Product
-  const handleDeleteProduct = async (id: string, name: string) => {
-    if (confirm(`Apakah Anda yakin ingin menghapus produk "${name}"?`)) {
+  // Prompt Delete Product: triggers ActionConfirmModal
+  const handlePromptDeleteProduct = (p: Product) => {
+    playKeyClick();
+    setProductToDelete(p);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const executeDeleteProduct = async () => {
+    if (!productToDelete) return;
+    try {
+      await db.products.delete(productToDelete.id);
       playKeyClick();
-      try {
-        await db.products.delete(id);
-        onRefresh();
-      } catch (err) {
-        console.error('Gagal menghapus produk:', err);
-      }
+      setIsConfirmDeleteOpen(false);
+      addToast(
+        'delete',
+        'Produk Telah Dihapus',
+        `"${productToDelete.name}" (Barcode: ${productToDelete.barcode}) telah dihapus dari sistem.`
+      );
+      setProductToDelete(null);
+      onRefresh();
+    } catch (err) {
+      console.error('Gagal menghapus produk:', err);
+      addToast('warning', 'Gagal Menghapus', 'Terjadi kesalahan saat menghapus data produk.');
     }
   };
 
@@ -443,7 +503,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteProduct(p.id, p.name)}
+                          onClick={() => handlePromptDeleteProduct(p)}
                           className="p-2 rounded-xl bg-cream-100 hover:bg-status-dangerBg text-status-dangerText transition-colors"
                           title="Hapus Produk"
                         >
@@ -681,6 +741,62 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         onDetected={(code) => setFormBarcode(code)}
         title="Scan Barcode Kemasan untuk Produk"
       />
+
+      {/* Action Confirmation Modal for DELETING Product */}
+      <ActionConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => {
+          setIsConfirmDeleteOpen(false);
+          setProductToDelete(null);
+        }}
+        onConfirm={executeDeleteProduct}
+        type="delete"
+        title="Hapus Produk dari Katalog?"
+        description="Data barang berikut akan dihapus secara permanen dari sistem toko Anugerah Store:"
+        details={
+          productToDelete
+            ? [
+                { label: 'Nama Barang', value: productToDelete.name, highlight: true },
+                { label: 'Nomor Barcode', value: productToDelete.barcode },
+                { label: 'Kategori', value: productToDelete.category },
+                { label: 'Satuan Unit', value: productToDelete.unit || 'pcs' },
+                {
+                  label: 'Sisa Stok Saat Ini',
+                  value: `${productToDelete.stock_quantity} ${productToDelete.unit || 'pcs'}`,
+                },
+                { label: 'Modal Beli (HPP)', value: formatRupiah(productToDelete.cost_price) },
+                { label: 'Harga Jual Kasir', value: formatRupiah(productToDelete.selling_price) },
+              ]
+            : []
+        }
+        confirmText="Ya, Hapus Produk"
+        cancelText="Batal"
+      />
+
+      {/* Action Confirmation Modal for EDITING / UPDATING Product */}
+      <ActionConfirmModal
+        isOpen={isConfirmEditOpen}
+        onClose={() => setIsConfirmEditOpen(false)}
+        onConfirm={executeSaveProduct}
+        type="edit"
+        title="Konfirmasi Perubahan Data Produk"
+        description="Periksa kembali rincian data produk berikut sebelum disimpan ke sistem kasir:"
+        details={[
+          { label: 'Nama Barang', value: formName, highlight: true },
+          { label: 'Nomor Barcode', value: formBarcode },
+          { label: 'Kategori', value: formCategory },
+          { label: 'Satuan Unit', value: formUnit },
+          { label: 'Modal Beli (HPP)', value: formatRupiah(formCostPrice) },
+          { label: 'Harga Jual Kasir', value: formatRupiah(formSellingPrice) },
+          { label: 'Jumlah Stok Fisik', value: `${formStockQuantity} ${formUnit}` },
+          { label: 'Peringatan Min. Stok', value: `${formMinStockAlert} ${formUnit}` },
+        ]}
+        confirmText="Ya, Simpan Perubahan"
+        cancelText="Kembali Periksa"
+      />
+
+      {/* Floating Feedback Toast Alerts */}
+      <ToastAlert toasts={toasts} onDismiss={handleDismissToast} />
     </div>
   );
 };

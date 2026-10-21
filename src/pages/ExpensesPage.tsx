@@ -14,7 +14,9 @@ import {
 } from 'lucide-react';
 import type { Expense, ExpenseCategory, Product } from '../types';
 import { formatRupiah, formatDateIndo, generateId } from '../utils/format';
-import { playSuccessBeep, playKeyClick } from '../utils/sound';
+import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
+import { ActionConfirmModal } from '../components/ActionConfirmModal';
+import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { db } from '../db';
 
 interface ExpensesPageProps {
@@ -29,6 +31,23 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Confirmation Modal & Toast State
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
+    const id = generateId('toast');
+    setToasts((prev) => [...prev, { id, type, title, description }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   // Form State with clean string numeric handlers
   const [formCategory, setFormCategory] = useState<ExpenseCategory>('KULAKAN_STOK');
@@ -77,7 +96,8 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     const restockQty = Number(restockQtyStr) || 0;
 
     if (formAmount <= 0) {
-      alert('Nominal biaya harus lebih dari Rp 0!');
+      playErrorBeep();
+      addToast('warning', 'Nominal Tidak Valid', 'Nominal biaya harus lebih dari Rp 0!');
       return;
     }
 
@@ -121,20 +141,42 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       await db.expenses.add(newExpense);
       playSuccessBeep();
       setIsModalOpen(false);
+      addToast(
+        'success',
+        'Pengeluaran Berhasil Dicatat',
+        `${finalDescription} (${formatRupiah(formAmount)}) telah ditambahkan ke laporan keuangan.`
+      );
       loadExpenses();
       onRefresh();
     } catch (err) {
       console.error('Gagal mencatat pengeluaran:', err);
-      alert('Gagal mencatat biaya.');
+      addToast('warning', 'Gagal Mencatat', 'Terjadi kesalahan sistem saat menyimpan catatan biaya.');
     }
   };
 
-  const handleDeleteExpense = async (id: string) => {
-    if (confirm('Hapus catatan pengeluaran ini?')) {
+  const handlePromptDeleteExpense = (e: Expense) => {
+    playKeyClick();
+    setExpenseToDelete(e);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const executeDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+    try {
+      await db.expenses.delete(expenseToDelete.id);
       playKeyClick();
-      await db.expenses.delete(id);
+      setIsConfirmDeleteOpen(false);
+      addToast(
+        'delete',
+        'Catatan Pengeluaran Dihapus',
+        `${expenseToDelete.description} (${formatRupiah(expenseToDelete.amount)}) telah dihapus dari pembukuan.`
+      );
+      setExpenseToDelete(null);
       loadExpenses();
       onRefresh();
+    } catch (err) {
+      console.error('Gagal menghapus pengeluaran:', err);
+      addToast('warning', 'Gagal Menghapus', 'Terjadi kesalahan saat menghapus catatan pengeluaran.');
     }
   };
 
@@ -287,7 +329,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
                   <td className="py-4 px-4 text-center">
                     <button
                       type="button"
-                      onClick={() => handleDeleteExpense(e.id)}
+                      onClick={() => handlePromptDeleteExpense(e)}
                       className="p-2 rounded-xl bg-cream-100 hover:bg-status-dangerBg text-status-dangerText transition-colors"
                       title="Hapus Catatan Ini"
                     >
@@ -451,6 +493,45 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal for DELETING Expense */}
+      <ActionConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => {
+          setIsConfirmDeleteOpen(false);
+          setExpenseToDelete(null);
+        }}
+        onConfirm={executeDeleteExpense}
+        type="delete"
+        title="Hapus Catatan Pengeluaran?"
+        description="Catatan biaya berikut akan dihapus secara permanen dari pembukuan toko Anugerah Store:"
+        details={
+          expenseToDelete
+            ? [
+                {
+                  label: 'Kategori Biaya',
+                  value: expenseToDelete.category.replace('_', ' '),
+                  highlight: true,
+                },
+                { label: 'Keterangan', value: expenseToDelete.description },
+                {
+                  label: 'Nominal Biaya',
+                  value: formatRupiah(expenseToDelete.amount),
+                  highlight: true,
+                },
+                {
+                  label: 'Tanggal Catatan',
+                  value: formatDateIndo(expenseToDelete.expense_date),
+                },
+              ]
+            : []
+        }
+        confirmText="Ya, Hapus Biaya Ini"
+        cancelText="Batal"
+      />
+
+      {/* Floating Feedback Toast Alerts */}
+      <ToastAlert toasts={toasts} onDismiss={handleDismissToast} />
     </div>
   );
 };

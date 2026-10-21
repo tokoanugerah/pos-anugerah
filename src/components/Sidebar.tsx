@@ -87,43 +87,100 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Navigation Links */}
-        <nav className="space-y-1.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl font-bold text-sm transition-all duration-150 min-h-[50px] group ${
-                  isActive
-                    ? 'bg-amber text-forest shadow-sm ring-1 ring-forest/15 font-extrabold'
-                    : 'text-ink-muted hover:text-ink hover:bg-cream-100'
+        {/* PROMINENT KASIR HERO BUTTON (MENU UTAMA) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => handleNavClick('kasir')}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all duration-200 min-h-[62px] shadow-sm group relative overflow-hidden active:scale-95 ${
+              currentTab === 'kasir'
+                ? 'bg-amber text-forest ring-4 ring-amber/30 shadow-elevated font-black'
+                : 'bg-forest text-white hover:bg-forest-light border-2 border-amber/50 hover:border-amber shadow-md'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 flex-shrink-0 ${
+                  currentTab === 'kasir'
+                    ? 'bg-forest text-amber shadow-sm'
+                    : 'bg-amber text-forest font-black'
                 }`}
               >
-                <div className="flex items-center gap-3.5">
-                  <Icon
-                    className={`w-5 h-5 transition-transform group-hover:scale-110 ${
-                      isActive ? 'text-forest stroke-[2.5]' : 'text-ink-subtle'
-                    }`}
-                  />
-                  <span className="truncate">{item.label}</span>
-                </div>
-
-                {item.badge !== undefined && item.badge > 0 && (
+                <ShoppingCart className="w-6 h-6 stroke-[2.5]" />
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-base font-black tracking-tight ${currentTab === 'kasir' ? 'text-forest' : 'text-white'}`}>
+                    Kasir (POS)
+                  </span>
                   <span
-                    className={`text-xs px-2.5 py-0.5 rounded-full font-black ${
-                      isActive ? 'bg-forest text-amber' : 'bg-amber text-forest'
+                    className={`text-[9px] uppercase font-black px-1.5 py-0.5 rounded-md ${
+                      currentTab === 'kasir'
+                        ? 'bg-forest text-amber'
+                        : 'bg-amber text-forest'
                     }`}
                   >
-                    {item.badge}
+                    Utama
                   </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
+                </div>
+                <p className={`text-[11px] font-semibold truncate ${currentTab === 'kasir' ? 'text-forest/80' : 'text-cream-200'}`}>
+                  {cartCount > 0 ? `${cartCount} item di keranjang` : 'Buka Layar Kasir'}
+                </p>
+              </div>
+            </div>
+
+            {cartCount > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-black bg-status-dangerText text-white animate-pulse shadow-sm">
+                {cartCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Navigation Links */}
+        <div className="space-y-1">
+          <p className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-ink-subtle">
+            Menu Kelola Toko
+          </p>
+          <nav className="space-y-1">
+            {navItems
+              .filter((item) => item.id !== 'kasir')
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavClick(item.id)}
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl font-bold text-sm transition-all duration-150 min-h-[46px] group ${
+                      isActive
+                        ? 'bg-amber text-forest shadow-sm ring-1 ring-forest/15 font-extrabold'
+                        : 'text-ink-muted hover:text-ink hover:bg-cream-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon
+                        className={`w-5 h-5 transition-transform group-hover:scale-110 ${
+                          isActive ? 'text-forest stroke-[2.5]' : 'text-ink-subtle'
+                        }`}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <span
+                        className={`text-xs px-2.5 py-0.5 rounded-full font-black ${
+                          isActive ? 'bg-forest text-amber' : 'bg-amber text-forest'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+          </nav>
+        </div>
       </div>
 
       {/* Bottom Profile & Status Card */}

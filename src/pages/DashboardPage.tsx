@@ -17,6 +17,8 @@ import { formatRupiah, formatNumber, formatDateIndo } from '../utils/format';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { db } from '../db';
 
+export type DashboardPeriod = 'hari' | 'minggu' | 'bulan';
+
 interface DashboardPageProps {
   products: Product[];
   onNavigateToPos: () => void;
@@ -33,6 +35,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [inspectSale, setInspectSale] = useState<Sale | null>(null);
   const [inspectSaleItems, setInspectSaleItems] = useState<SaleItem[]>([]);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [period, setPeriod] = useState<DashboardPeriod>('hari');
 
   useEffect(() => {
     let isMounted = true;
@@ -50,17 +53,51 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, []);
 
-  // Today's metrics (stable timestamp)
+  // Today and boundary timestamps (stable)
   const [todayDate] = useState(() => new Date());
   const todayStr = todayDate.toISOString().slice(0, 10);
+  const monthStr = todayDate.toISOString().slice(0, 7);
 
-  const todaySales = useMemo(() => {
-    return sales.filter((s) => s.transaction_date.slice(0, 10) === todayStr);
-  }, [sales, todayStr]);
+  const sevenDaysAgoDate = useMemo(() => {
+    const d = new Date(todayDate);
+    d.setDate(d.getDate() - 7);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [todayDate]);
 
-  const todayRevenue = useMemo(() => {
-    return todaySales.reduce((acc, s) => acc + s.total_amount, 0);
-  }, [todaySales]);
+  // Sales filtered by selected period
+  const periodFilteredSales = useMemo(() => {
+    return sales.filter((s) => {
+      const sDateStr = s.transaction_date.slice(0, 10);
+      if (period === 'hari') {
+        return sDateStr === todayStr;
+      }
+      if (period === 'minggu') {
+        const sTime = new Date(s.transaction_date).getTime();
+        return sTime >= sevenDaysAgoDate.getTime();
+      }
+      if (period === 'bulan') {
+        return s.transaction_date.slice(0, 7) === monthStr;
+      }
+      return true;
+    });
+  }, [sales, period, todayStr, monthStr, sevenDaysAgoDate]);
+
+  const periodSaleIds = useMemo(() => {
+    return new Set(periodFilteredSales.map((s) => s.id));
+  }, [periodFilteredSales]);
+
+  const periodFilteredSaleItems = useMemo(() => {
+    return saleItems.filter((item) => periodSaleIds.has(item.sale_id));
+  }, [saleItems, periodSaleIds]);
+
+  const periodRevenue = useMemo(() => {
+    return periodFilteredSales.reduce((acc, s) => acc + s.total_amount, 0);
+  }, [periodFilteredSales]);
+
+  const periodGrossProfit = useMemo(() => {
+    return periodFilteredSales.reduce((acc, s) => acc + s.gross_profit, 0);
+  }, [periodFilteredSales]);
 
   // Total Inventory Asset Valuation: Sum(stock_quantity * cost_price)
   const totalAssetValue = useMemo(() => {
@@ -80,11 +117,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     return products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= p.min_stock_alert);
   }, [products]);
 
-  // Top Selling Items (Barang Paling Laris)
+  // Top Selling Items for the selected period
   const topSelling = useMemo(() => {
     const map = new Map<string, { name: string; qty: number; unit: string; revenue: number }>();
 
-    saleItems.forEach((item) => {
+    periodFilteredSaleItems.forEach((item) => {
       const prod = products.find((p) => p.id === item.product_id);
       const current = map.get(item.product_id) || {
         name: item.product_name,
@@ -100,15 +137,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     return Array.from(map.values())
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 6);
-  }, [saleItems, products]);
+  }, [periodFilteredSaleItems, products]);
 
-  // Dead-Stock Detection (Produk yang belum pernah terjual sama sekali)
+  // Dead-Stock Detection (Barang yang ada stok namun 0 terjual pada periode ini)
   const deadStockProducts = useMemo(() => {
-    const soldProductIds = new Set(saleItems.map((item) => item.product_id));
+    const soldProductIds = new Set(periodFilteredSaleItems.map((item) => item.product_id));
     return products
       .filter((p) => !soldProductIds.has(p.id) && p.stock_quantity > 0)
       .sort((a, b) => b.stock_quantity * b.cost_price - a.stock_quantity * a.cost_price);
-  }, [products, saleItems]);
+  }, [products, periodFilteredSaleItems]);
 
   const handleInspectSale = (sale: Sale) => {
     const items = saleItems.filter((i) => i.sale_id === sale.id);
@@ -117,10 +154,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     setIsReceiptOpen(true);
   };
 
+  const periodLabel = useMemo(() => {
+    if (period === 'hari') return 'Hari Ini';
+    if (period === 'minggu') return '7 Hari Terakhir';
+    return 'Bulan Ini';
+  }, [period]);
+
   return (
     <div className="w-full space-y-6">
       {/* Top Banner / Greeting Row */}
-      <div className="bg-card p-6 rounded-3xl shadow-card border border-cream-300 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-card p-6 rounded-3xl shadow-card border border-cream-300 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-forest">
             <Sparkles className="w-5 h-5 text-amber-dark" />
@@ -132,12 +175,49 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             Selamat Datang di Anugerah Store!
           </h1>
           <p className="text-sm text-ink-muted">
-            Ringkasan performa penjualan harian, perputaran barang, dan estimasi nilai aset toko Anda
+            Ringkasan performa penjualan, perputaran barang, dan estimasi nilai aset toko Anda
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 bg-cream-100 px-4 py-3 rounded-2xl border border-cream-200 text-xs font-bold text-ink">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filter Periode Dashboard: [per-hari, per-minggu, per-bulan] */}
+          <div className="flex items-center bg-cream-100 p-1.5 rounded-2xl border border-cream-300 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setPeriod('hari')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                period === 'hari'
+                  ? 'bg-amber text-forest font-black shadow-sm'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              Hari Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('minggu')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                period === 'minggu'
+                  ? 'bg-amber text-forest font-black shadow-sm'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              Per-Minggu (7 Hari)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('bulan')}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                period === 'bulan'
+                  ? 'bg-amber text-forest font-black shadow-sm'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              Per-Bulan (30 Hari)
+            </button>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-2 bg-cream-100 px-3.5 py-2.5 rounded-2xl border border-cream-200 text-xs font-bold text-ink">
             <Clock className="w-4 h-4 text-forest" />
             <span>{formatDateIndo(todayDate)}</span>
           </div>
@@ -145,7 +225,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <button
             type="button"
             onClick={onNavigateToPos}
-            className="px-6 py-3.5 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-sm transition-all shadow-elevated flex items-center gap-2 active:scale-95"
+            className="px-5 py-3 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-sm transition-all shadow-elevated flex items-center gap-2 active:scale-95"
           >
             <Plus className="w-5 h-5 stroke-[3]" />
             <span>+ Buka Kasir Baru</span>
@@ -155,11 +235,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
       {/* METRIC CARDS ROW (Bitepoint Aesthetic Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* HERO GREEN CARD: TRANSAKSI HARI INI */}
+        {/* HERO GREEN CARD: PENJUALAN PERIODE TERPILIH */}
         <div className="bg-forest text-white p-6 rounded-3xl shadow-elevated flex flex-col justify-between min-h-[160px] relative overflow-hidden group">
           <div className="flex justify-between items-start">
             <span className="text-xs font-extrabold text-amber uppercase tracking-wider">
-              Penjualan Hari Ini
+              Penjualan ({periodLabel})
             </span>
             <div className="w-9 h-9 rounded-xl bg-forest-light flex items-center justify-center text-amber">
               <ShoppingBag className="w-5 h-5" />
@@ -167,11 +247,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
           <div>
             <p className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-white">
-              {todaySales.length} <span className="text-lg font-normal text-cream-200">Pesanan</span>
+              {periodFilteredSales.length} <span className="text-lg font-normal text-cream-200">Pesanan</span>
             </p>
-            <p className="text-xs text-cream-200 mt-1 font-semibold">
-              Omset: <b className="text-amber font-mono text-sm">{formatRupiah(todayRevenue)}</b>
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-cream-200 font-semibold">
+              <span>Omset: <b className="text-amber font-mono text-sm">{formatRupiah(periodRevenue)}</b></span>
+              <span className="text-emerald-300">• Laba: <b className="font-mono">{formatRupiah(periodGrossProfit)}</b></span>
+            </div>
           </div>
         </div>
 
@@ -195,11 +276,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
 
-        {/* TOTAL SELURUH TRANSAKSI */}
+        {/* TRANSAKSI PERIODE TERPILIH */}
         <div className="bg-card p-6 rounded-3xl shadow-card border border-cream-300 flex flex-col justify-between min-h-[160px]">
           <div className="flex justify-between items-start">
             <span className="text-xs font-extrabold text-ink-muted uppercase tracking-wider">
-              Total Transaksi Toko
+              Transaksi ({periodLabel})
             </span>
             <div className="w-9 h-9 rounded-xl bg-cream-100 flex items-center justify-center text-ink-muted">
               <TrendingUp className="w-5 h-5" />
@@ -207,10 +288,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
           <div>
             <p className="text-2xl sm:text-3xl font-black font-mono text-ink">
-              {sales.length} <span className="text-base font-normal text-ink-muted">Nota</span>
+              {periodFilteredSales.length} <span className="text-base font-normal text-ink-muted">Nota</span>
             </p>
             <p className="text-xs text-ink-muted mt-1">
-              Tercatat aman di IndexedDB kasir
+              Dari {sales.length} total riwayat nota di sistem
             </p>
           </div>
         </div>
@@ -251,16 +332,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="lg:col-span-7 bg-card p-6 rounded-3xl shadow-card border border-cream-300 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-cream-200">
             <div>
-              <h3 className="font-extrabold text-lg text-ink">Daftar Transaksi Kasir</h3>
-              <p className="text-xs text-ink-muted">Transaksi penjualan kasir paling mutakhir</p>
+              <h3 className="font-extrabold text-lg text-ink">
+                Daftar Transaksi Kasir ({periodLabel})
+              </h3>
+              <p className="text-xs text-ink-muted">Transaksi penjualan kasir pada rentang waktu ini</p>
             </div>
             <span className="text-xs font-bold text-forest bg-forest-surface px-3 py-1 rounded-full">
-              {sales.length} Tercatat
+              {periodFilteredSales.length} Tercatat
             </span>
           </div>
 
           <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
-            {sales.slice(0, 8).map((s) => (
+            {periodFilteredSales.slice(0, 10).map((s) => (
               <div
                 key={s.id}
                 className="p-4 bg-cream-50 hover:bg-cream-100 rounded-2xl border border-cream-200 flex items-center justify-between transition-colors gap-3"
@@ -309,10 +392,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
             ))}
 
-            {sales.length === 0 && (
+            {periodFilteredSales.length === 0 && (
               <div className="py-12 text-center text-ink-muted">
                 <ShoppingBag className="w-10 h-10 mx-auto mb-2 opacity-40 text-ink-subtle" />
-                <p className="font-bold">Belum ada transaksi penjualan</p>
+                <p className="font-bold">Belum ada transaksi penjualan pada rentang {periodLabel}</p>
                 <p className="text-xs text-ink-muted mt-1">
                   Buka kasir untuk memulai transaksi pertama
                 </p>
@@ -328,7 +411,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-cream-200">
               <div className="flex items-center gap-2">
                 <Award className="w-5 h-5 text-amber-dark" />
-                <h3 className="font-extrabold text-base text-ink">Barang Paling Laris</h3>
+                <h3 className="font-extrabold text-base text-ink">
+                  Barang Paling Laris ({periodLabel})
+                </h3>
               </div>
               <span className="text-xs text-ink-muted font-semibold">Peringkat Penjualan</span>
             </div>
@@ -360,7 +445,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
               {topSelling.length === 0 && (
                 <p className="py-6 text-center text-xs text-ink-muted">
-                  Belum ada data barang terjual
+                  Belum ada data barang terjual pada {periodLabel}
                 </p>
               )}
             </div>
@@ -371,7 +456,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-cream-200">
               <div className="flex items-center gap-2">
                 <AlertOctagon className="w-5 h-5 text-status-warningText" />
-                <h3 className="font-extrabold text-base text-ink">Deteksi Barang Mati (Dead-Stock)</h3>
+                <h3 className="font-extrabold text-base text-ink">Deteksi Barang Mati ({periodLabel})</h3>
               </div>
               <span className="text-xs text-status-warningText font-bold bg-status-warningBg px-2 py-0.5 rounded-full">
                 0 Terjual
@@ -379,11 +464,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
 
             <p className="text-xs text-ink-muted leading-relaxed">
-              Daftar barang yang belum ada perputaran transaksi, menyebabkan modal toko tertahan:
+              Barang bersisa stok yang belum bergerak pada {periodLabel}, menyebabkan modal tertahan:
             </p>
 
             <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-              {deadStockProducts.map((p) => {
+              {deadStockProducts.slice(0, 10).map((p) => {
                 const idleCapital = p.stock_quantity * p.cost_price;
                 return (
                   <div
@@ -405,7 +490,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
               {deadStockProducts.length === 0 && (
                 <p className="py-4 text-center text-xs text-status-successText font-semibold">
-                  Semua barang memiliki aktivitas penjualan aktif.
+                  Semua barang memiliki perputaran penjualan aktif.
                 </p>
               )}
             </div>

@@ -9,12 +9,19 @@ import {
   FileCheck,
   Shield,
   Clock,
+  Tags,
+  Plus,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import {
   getStoreSettings,
   saveStoreSettings,
   resetDatabaseToInitial,
   db,
+  DEFAULT_CATEGORIES,
+  getProductCategories,
+  saveProductCategories,
 } from '../db';
 import type { StoreSettings } from '../types';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
@@ -29,13 +36,75 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [saveAlert, setSaveAlert] = useState(false);
   const [restoreStats, setRestoreStats] = useState<string | null>(null);
 
+  // Category management states
+  const [categories, setCategories] = useState<string[]>(() => getProductCategories());
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [categoryAlert, setCategoryAlert] = useState<string | null>(null);
+
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    saveStoreSettings(settings);
+    const updatedSettings = {
+      ...settings,
+      categories,
+    };
+    saveStoreSettings(updatedSettings);
     playSuccessBeep();
     setSaveAlert(true);
     setTimeout(() => setSaveAlert(false), 2500);
     onRefreshAll();
+  };
+
+  const handleAddCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newCategoryInput.trim();
+    if (!trimmed) return;
+
+    // Check if category already exists (case-insensitive)
+    const exists = categories.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+    if (exists) {
+      playErrorBeep();
+      setCategoryAlert(`Kategori "${trimmed}" sudah ada di daftar.`);
+      setTimeout(() => setCategoryAlert(null), 2500);
+      return;
+    }
+
+    const updated = [...categories, trimmed];
+    setCategories(updated);
+    saveProductCategories(updated);
+    setNewCategoryInput('');
+    playSuccessBeep();
+    setCategoryAlert(`Kategori "${trimmed}" berhasil ditambahkan!`);
+    setTimeout(() => setCategoryAlert(null), 2500);
+    onRefreshAll();
+  };
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    if (categories.length <= 1) {
+      alert('Minimal harus ada 1 kategori barang di sistem.');
+      return;
+    }
+    if (confirm(`Hapus kategori "${catToDelete}"? Produk yang sudah ada tetap aman, namun kategori ini tidak akan muncul lagi sebagai pilihan kategori produk baru.`)) {
+      playKeyClick();
+      const updated = categories.filter((c) => c !== catToDelete);
+      setCategories(updated);
+      saveProductCategories(updated);
+      playSuccessBeep();
+      setCategoryAlert(`Kategori "${catToDelete}" berhasil dihapus.`);
+      setTimeout(() => setCategoryAlert(null), 2500);
+      onRefreshAll();
+    }
+  };
+
+  const handleResetCategories = () => {
+    if (confirm('Kembalikan daftar kategori barang ke pilihan bawaan standar sistem Anugerah Store?')) {
+      playKeyClick();
+      setCategories(DEFAULT_CATEGORIES);
+      saveProductCategories(DEFAULT_CATEGORIES);
+      playSuccessBeep();
+      setCategoryAlert('Daftar kategori berhasil dikembalikan ke standar awal.');
+      setTimeout(() => setCategoryAlert(null), 2500);
+      onRefreshAll();
+    }
   };
 
   // Export 100% Complete IndexedDB backup (All tables + settings)
@@ -53,7 +122,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
         app: 'Anugerah Store',
         version: 2,
         exportedAt: new Date().toISOString(),
-        storeSettings: settings,
+        storeSettings: {
+          ...settings,
+          categories,
+        },
         data: {
           products,
           sales,
@@ -167,6 +239,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
         if (importedSettings) {
           saveStoreSettings(importedSettings);
           setSettings(importedSettings);
+          if (Array.isArray(importedSettings.categories) && importedSettings.categories.length > 0) {
+            setCategories(importedSettings.categories);
+            saveProductCategories(importedSettings.categories);
+          }
         }
 
         playSuccessBeep();
@@ -207,7 +283,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
           Pengaturan Toko & Keamanan Data
         </h1>
         <p className="text-sm text-ink-muted">
-          Atur informasi struk kasir dan kelola pencadangan data lokal (JSON) agar aman dari risiko kehilangan
+          Atur informasi struk kasir, jenis kategori produk, dan kelola pencadangan data lokal (JSON)
         </p>
       </div>
 
@@ -226,8 +302,94 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* KOLOM KIRI: CADANGAN DATA LOKAL (JSON) (7 Kolom) */}
+        {/* KOLOM KIRI: CADANGAN DATA LOKAL & KATEGORI (7 Kolom) */}
         <div className="lg:col-span-7 space-y-6">
+          {/* MANAJEMEN KATEGORI BARANG */}
+          <div className="bg-card p-6 sm:p-8 rounded-3xl shadow-card border border-cream-300 space-y-5">
+            <div className="flex items-center justify-between pb-4 border-b border-cream-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-forest-surface flex items-center justify-center text-forest">
+                  <Tags className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-lg text-ink">
+                    Manajemen Kategori Barang
+                  </h3>
+                  <p className="text-xs text-ink-muted">Kelola kategori produk toko yang dapat dipilih saat input barang</p>
+                </div>
+              </div>
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-forest-surface text-forest">
+                {categories.length} Kategori
+              </span>
+            </div>
+
+            {categoryAlert && (
+              <div className="p-3 bg-amber-light border border-amber text-forest rounded-xl font-bold text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-amber-dark" />
+                <span>{categoryAlert}</span>
+              </div>
+            )}
+
+            {/* Form Tambah Kategori Baru */}
+            <form onSubmit={handleAddCategory} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Ketik nama kategori baru (cth: Frozen Food, Kosmetik)..."
+                value={newCategoryInput}
+                onChange={(e) => setNewCategoryInput(e.target.value)}
+                className="flex-1 px-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-semibold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest"
+              />
+              <button
+                type="submit"
+                className="px-5 py-3 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-sm transition-all shadow-sm flex items-center gap-1.5 active:scale-95 flex-shrink-0"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>+ Tambah</span>
+              </button>
+            </form>
+
+            {/* List of Categories */}
+            <div>
+              <p className="text-xs font-bold text-ink-muted uppercase tracking-wider mb-2.5">
+                Daftar Kategori Aktif (Dapat Dipilih Saat Tambah Produk):
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((cat) => (
+                  <div
+                    key={cat}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-cream-100 hover:bg-cream-200 border border-cream-300 rounded-xl text-xs font-extrabold text-ink transition-colors group"
+                  >
+                    <span>{cat}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(cat)}
+                      className="text-ink-subtle hover:text-status-dangerText transition-colors p-0.5 rounded-md hover:bg-white"
+                      title={`Hapus kategori ${cat}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-cream-200 flex items-center justify-between">
+              <span className="text-[11px] text-ink-muted">
+                Kategori tersimpan otomatis di sistem kasir dan terikut dalam berkas cadangan JSON
+              </span>
+              <button
+                type="button"
+                onClick={handleResetCategories}
+                className="text-xs text-ink-subtle hover:text-forest font-bold flex items-center gap-1 transition-colors"
+                title="Kembalikan daftar ke bawaan standar sistem"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Standar</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CADANGAN DATA LOKAL (JSON BACKUP) */}
           <div className="bg-card p-6 sm:p-8 rounded-3xl shadow-card border border-cream-300 space-y-5">
             <div className="flex items-center justify-between pb-4 border-b border-cream-200">
               <div className="flex items-center gap-2.5">

@@ -14,7 +14,7 @@ import type { Product } from '../types';
 import { formatRupiah, formatNumber, generateId } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { CameraScannerModal } from '../components/CameraScannerModal';
-import { db } from '../db';
+import { db, getProductCategories } from '../db';
 
 interface ProductsPageProps {
   products: Product[];
@@ -42,9 +42,22 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const [formStockQuantityStr, setFormStockQuantityStr] = useState<string>('10');
   const [formMinStockAlertStr, setFormMinStockAlertStr] = useState<string>('5');
 
+  // Dynamic categories from settings + any existing product categories
   const categories = useMemo(() => {
-    return ['Semua', 'Sembako', 'Makanan & Mie', 'Minuman', 'Bumbu & Dapur', 'Sabun & Kebersihan', 'Lainnya'];
-  }, []);
+    const fromSettings = getProductCategories();
+    const set = new Set<string>(['Semua', ...fromSettings]);
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set);
+  }, [products]);
+
+  const formAvailableCategories = useMemo(() => {
+    const fromSettings = getProductCategories();
+    const set = new Set<string>(fromSettings);
+    if (formCategory) set.add(formCategory);
+    return Array.from(set);
+  }, [formCategory]);
 
   const standardUnits = useMemo(() => {
     return ['pcs', 'kg', 'liter', 'bungkus', 'botol', 'sak', 'pouch', 'renceng', 'dus', 'batang', 'kaleng', 'sachet'];
@@ -75,10 +88,11 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   // Open Modal for Add
   const handleOpenAddModal = () => {
     playKeyClick();
+    const available = getProductCategories();
     setEditingProduct(null);
     setFormBarcode('');
     setFormName('');
-    setFormCategory('Sembako');
+    setFormCategory(available[0] || 'Sembako');
     setFormUnit('pcs');
     setFormCostPriceStr('');
     setFormSellingPriceStr('');
@@ -523,12 +537,11 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                     onChange={(e) => setFormCategory(e.target.value)}
                     className="w-full px-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-bold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest"
                   >
-                    <option value="Sembako">Sembako</option>
-                    <option value="Makanan & Mie">Makanan & Mie</option>
-                    <option value="Minuman">Minuman</option>
-                    <option value="Bumbu & Dapur">Bumbu & Dapur</option>
-                    <option value="Sabun & Kebersihan">Sabun & Kebersihan</option>
-                    <option value="Lainnya">Lainnya</option>
+                    {formAvailableCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

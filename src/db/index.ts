@@ -24,6 +24,18 @@ export class AnugerahStoreDB extends Dexie {
 
 export const db = new AnugerahStoreDB();
 
+// Default Categories for Products
+export const DEFAULT_CATEGORIES: string[] = [
+  'Sembako',
+  'Makanan & Mie',
+  'Minuman',
+  'Bumbu & Dapur',
+  'Sabun & Kebersihan',
+  'Perawatan Diri',
+  'Snack & Camilan',
+  'Lainnya',
+];
+
 // Default Store Settings
 export const DEFAULT_SETTINGS: StoreSettings = {
   storeName: 'Anugerah Store',
@@ -31,12 +43,22 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   storePhone: '0812-3456-7890',
   receiptFooter: 'Terima kasih telah berbelanja di Anugerah Store. Semoga berkah selalu!',
   cashierName: 'Kasir Anugerah Store',
+  categories: DEFAULT_CATEGORIES,
 };
 
 export function getStoreSettings(): StoreSettings {
   try {
     const saved = localStorage.getItem('as_store_settings');
-    if (saved) return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        categories: Array.isArray(parsed.categories) && parsed.categories.length > 0
+          ? parsed.categories
+          : DEFAULT_CATEGORIES,
+      };
+    }
   } catch (e) {
     console.warn('Gagal membaca pengaturan toko:', e);
   }
@@ -45,6 +67,20 @@ export function getStoreSettings(): StoreSettings {
 
 export function saveStoreSettings(settings: StoreSettings) {
   localStorage.setItem('as_store_settings', JSON.stringify(settings));
+}
+
+export function getProductCategories(): string[] {
+  const settings = getStoreSettings();
+  if (settings.categories && Array.isArray(settings.categories) && settings.categories.length > 0) {
+    return settings.categories;
+  }
+  return DEFAULT_CATEGORIES;
+}
+
+export function saveProductCategories(categories: string[]) {
+  const settings = getStoreSettings();
+  settings.categories = categories;
+  saveStoreSettings(settings);
 }
 
 // Initial Seed Products with explicit Units

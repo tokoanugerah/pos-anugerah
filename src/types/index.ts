@@ -93,4 +93,5 @@ export interface StoreSettings {
   receiptFooter: string;
   cashierName: string;
   lastBackupDate?: string;
+  categories?: string[];
 }

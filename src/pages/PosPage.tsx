@@ -19,7 +19,7 @@ import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { PaymentModal } from '../components/PaymentModal';
 import { ReceiptModal } from '../components/ReceiptModal';
-import { db } from '../db';
+import { db, getProductCategories } from '../db';
 
 interface PosPageProps {
   products: Product[];
@@ -43,10 +43,10 @@ export const PosPage: React.FC<PosPageProps> = ({
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Extract unique categories
+  // Extract unique categories (combines settings and existing products)
   const categories = useMemo(() => {
-    const set = new Set<string>();
-    set.add('Semua');
+    const fromSettings = getProductCategories();
+    const set = new Set<string>(['Semua', ...fromSettings]);
     products.forEach((p) => {
       if (p.category) set.add(p.category);
     });

@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #F9F6EE;
+    color: #1A202C;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F0ECE1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: #DDD5BD;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B06000;
+}
+
+/* Print Styles for Struk / Nota Kasir */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-receipt, #thermal-receipt * {
+    visibility: visible;
+  }
+  #thermal-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 78mm;
+    margin: 0;
+    padding: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #000;
+    background: #fff;
+  }
+}

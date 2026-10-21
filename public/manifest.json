@@ -1,0 +1,17 @@
+{
+  "name": "Anugerah Store - POS Kasir Ritel",
+  "short_name": "Anugerah Store",
+  "description": "Sistem Kasir Ritel & Manajemen Toko Anugerah Store",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F9F6EE",
+  "theme_color": "#084C46",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

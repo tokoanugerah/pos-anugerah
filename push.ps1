@@ -14,10 +14,10 @@ if ($status) {
 }
 
 Write-Host "Mendorong perubahan ke remote GitHub (tokoanugerah/pos-anugerah)..." -ForegroundColor Cyan
-git push -u origin main
+git push origin main
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Berhasil di-push ke GitHub!" -ForegroundColor Green
 } else {
-    Write-Host "Gagal push. Periksa kembali hak akses akun GitHub Anda ke repository tokoanugerah/pos-anugerah." -ForegroundColor Red
+    Write-Host "Gagal push. Periksa kembali koneksi atau remote GitHub Anda." -ForegroundColor Red
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   PackagePlus,
   Search,
@@ -16,7 +16,7 @@ import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
-import { db, getProductCategories } from '../db';
+import { db, getProductCategories, clearAllStoreData } from '../db';
 
 interface ProductsPageProps {
   products: Product[];
@@ -53,6 +53,24 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const handleDismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Otomatis bersihkan jika browser masih menyimpan data contoh tiruan awal
+  useEffect(() => {
+    const hasDummy = products.some(
+      (p) =>
+        p.id.startsWith('prod_') ||
+        p.barcode === '899999900101' ||
+        p.barcode === '899999900102' ||
+        p.name.toLowerCase().includes('bimoli') ||
+        p.name.toLowerCase().includes('rojolele')
+    );
+    if (hasDummy) {
+      console.log('Terdeteksi sisa data contoh di Katalog Produk, membersihkan...');
+      clearAllStoreData().then(() => {
+        onRefresh();
+      });
+    }
+  }, [products, onRefresh]);
 
   // Form State using Strings to eliminate sticky leading zero bug (024500)
   const [formBarcode, setFormBarcode] = useState('');

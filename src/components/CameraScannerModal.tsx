@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, X, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
 import { playSuccessBeep, playErrorBeep } from '../utils/sound';
 
@@ -21,62 +21,30 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const animationFrameRef = useRef<number | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (!isOpen) {
-      stopCamera();
-      return;
-    }
-
-    startCamera();
-
-    return () => {
-      stopCamera();
-    };
-  }, [isOpen]);
-
-  const startCamera = async () => {
-    setErrorMsg('');
-    setIsScanning(true);
-    try {
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        await videoRef.current.play();
-        setupBarcodeDetection();
-      }
-    } catch (err: unknown) {
-      console.warn('Akses kamera tidak diizinkan atau tidak ditemukan:', err);
-      setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera aktif atau gunakan input manual.');
-      setIsScanning(false);
-    }
-  };
-
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
+      });
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setIsScanning(false);
-  };
+  }, []);
 
-  const setupBarcodeDetection = () => {
-    // Check if native BarcodeDetector is available (supported in Chromium/Chrome/Edge/Android)
+  const setupBarcodeDetection = useCallback(() => {
     if ('BarcodeDetector' in window) {
       try {
         const barcodeDetector = new (window as unknown as {
@@ -93,18 +61,23 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
             return;
           }
 
-          try {
-            const barcodes = await barcodeDetector.detect(videoRef.current);
-            if (barcodes.length > 0 && barcodes[0].rawValue) {
-              const code = barcodes[0].rawValue;
-              playSuccessBeep();
-              onDetected(code);
-              stopCamera();
-              onClose();
-              return;
+          const now = Date.now();
+          // Throttle detection to every 120ms to keep CPU/GPU low & prevent stutter
+          if (now - lastScanTimeRef.current > 120) {
+            lastScanTimeRef.current = now;
+            try {
+              const barcodes = await barcodeDetector.detect(videoRef.current);
+              if (barcodes.length > 0 && barcodes[0].rawValue) {
+                const code = barcodes[0].rawValue.trim();
+                playSuccessBeep();
+                stopCamera();
+                onDetected(code);
+                onClose();
+                return;
+              }
+            } catch {
+              // Frame dropped or detection failed, continue to next frame
             }
-          } catch {
-            // Frame detection error, continue next frame
           }
 
           animationFrameRef.current = requestAnimationFrame(detectFrame);
@@ -115,15 +88,81 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         console.warn('BarcodeDetector gagal diinisialisasi:', e);
       }
     }
+  }, [onDetected, onClose, stopCamera]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (isOpen) {
+      navigator.mediaDevices?.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
+      .then(async (stream) => {
+        if (!active) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute('playsinline', 'true');
+          await videoRef.current.play();
+          if (active) {
+            setIsScanning(true);
+            setupBarcodeDetection();
+          }
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          console.warn('Akses kamera tidak diizinkan atau tidak ditemukan:', err);
+          setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera aktif atau gunakan input manual.');
+        }
+      });
+    }
+
+    return () => {
+      active = false;
+      stopCamera();
+    };
+  }, [isOpen, setupBarcodeDetection, stopCamera]);
+
+  const handleRetry = () => {
+    setErrorMsg('');
+    navigator.mediaDevices?.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    })
+    .then(async (stream) => {
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        await videoRef.current.play();
+        setIsScanning(true);
+        setupBarcodeDetection();
+      }
+    })
+    .catch((err) => {
+      console.warn('Retry kamera gagal:', err);
+      setErrorMsg('Kamera tetap tidak dapat diakses.');
+    });
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCode.trim()) {
       playSuccessBeep();
+      stopCamera();
       onDetected(manualCode.trim());
       setManualCode('');
-      stopCamera();
       onClose();
     } else {
       playErrorBeep();
@@ -171,7 +210,6 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
           {isScanning && (
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
               <div className="w-3/4 h-1/2 border-2 border-amber rounded-2xl relative shadow-[0_0_15px_rgba(247,202,88,0.5)]">
-                {/* Scanning laser line animation */}
                 <div className="absolute top-0 left-0 right-0 h-1 bg-amber animate-pulse shadow-[0_0_8px_#F7CA58]" />
               </div>
               <p className="mt-3 text-xs font-semibold text-white bg-black/60 px-3 py-1 rounded-full">
@@ -185,7 +223,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
               <AlertCircle className="w-12 h-12 text-status-dangerText mb-2" />
               <p className="text-sm font-semibold text-ink">{errorMsg}</p>
               <button
-                onClick={startCamera}
+                onClick={handleRetry}
                 className="mt-4 flex items-center gap-2 px-4 py-2 bg-amber hover:bg-amber-hover text-forest font-bold rounded-xl text-sm"
               >
                 <RefreshCw className="w-4 h-4" /> Coba Nyalakan Lagi

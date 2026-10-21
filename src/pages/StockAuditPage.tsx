@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Barcode,
   Camera,
@@ -31,13 +31,19 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
   const [auditHistory, setAuditHistory] = useState<StockAudit[]>([]);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const loadAuditHistory = async () => {
+  const loadAuditHistory = useCallback(async () => {
     const list = await db.stock_audits.orderBy('audit_date').reverse().limit(30).toArray();
     setAuditHistory(list);
-  };
+  }, []);
 
   useEffect(() => {
-    loadAuditHistory();
+    let isMounted = true;
+    db.stock_audits.orderBy('audit_date').reverse().limit(30).toArray().then((list) => {
+      if (isMounted) setAuditHistory(list);
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleSelectProduct = (p: Product) => {

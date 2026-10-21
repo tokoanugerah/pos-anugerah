@@ -609,14 +609,16 @@ export const PosPage: React.FC<PosPageProps> = ({
         onDetected={(code) => handleBarcodeProcess(code)}
       />
 
-      <PaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        cartItems={cart}
-        totalAmount={totalAmount}
-        totalCost={totalCost}
-        onPaymentSuccess={handlePaymentSuccess}
-      />
+      {isPaymentOpen && (
+        <PaymentModal
+          isOpen={isPaymentOpen}
+          onClose={() => setIsPaymentOpen(false)}
+          cartItems={cart}
+          totalAmount={totalAmount}
+          totalCost={totalCost}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+      )}
 
       <ReceiptModal
         isOpen={isReceiptOpen}

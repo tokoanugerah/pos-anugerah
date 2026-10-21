@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Banknote, QrCode, Building2, Check, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { CartItem, PaymentMethod, Sale, SaleItem } from '../types';
@@ -24,18 +24,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onPaymentSuccess,
 }) => {
   const [method, setMethod] = useState<PaymentMethod>('TUNAI');
-  const [cashReceived, setCashReceived] = useState<number>(0);
+  const [cashReceived, setCashReceived] = useState<number>(totalAmount);
   const [notes, setNotes] = useState<string>('');
-  const [customCashInput, setCustomCashInput] = useState<string>('');
-
-  useEffect(() => {
-    if (isOpen) {
-      setMethod('TUNAI');
-      setCashReceived(totalAmount);
-      setCustomCashInput(String(totalAmount));
-      setNotes('');
-    }
-  }, [isOpen, totalAmount]);
+  const [customCashInput, setCustomCashInput] = useState<string>(String(totalAmount));
 
   if (!isOpen) return null;
 

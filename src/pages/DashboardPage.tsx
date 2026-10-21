@@ -35,17 +35,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
 
   useEffect(() => {
-    const loadDashboardData = async () => {
-      const s = await db.sales.orderBy('transaction_date').reverse().toArray();
-      const si = await db.sale_items.toArray();
-      setSales(s);
-      setSaleItems(si);
+    let isMounted = true;
+    Promise.all([
+      db.sales.orderBy('transaction_date').reverse().toArray(),
+      db.sale_items.toArray(),
+    ]).then(([s, si]) => {
+      if (isMounted) {
+        setSales(s);
+        setSaleItems(si);
+      }
+    });
+    return () => {
+      isMounted = false;
     };
-    loadDashboardData();
   }, []);
 
-  // Today's metrics
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // Today's metrics (stable timestamp)
+  const [todayDate] = useState(() => new Date());
+  const todayStr = todayDate.toISOString().slice(0, 10);
 
   const todaySales = useMemo(() => {
     return sales.filter((s) => s.transaction_date.slice(0, 10) === todayStr);
@@ -132,7 +139,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 bg-cream-100 px-4 py-3 rounded-2xl border border-cream-200 text-xs font-bold text-ink">
             <Clock className="w-4 h-4 text-forest" />
-            <span>{formatDateIndo(new Date())}</span>
+            <span>{formatDateIndo(todayDate)}</span>
           </div>
 
           <button

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Truck,
   Plus,
@@ -37,13 +37,19 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [selectedRestockProductId, setSelectedRestockProductId] = useState<string>('');
   const [restockQtyStr, setRestockQtyStr] = useState<string>('10');
 
-  const loadExpenses = async () => {
+  const loadExpenses = useCallback(async () => {
     const list = await db.expenses.orderBy('expense_date').reverse().toArray();
     setExpenses(list);
-  };
+  }, []);
 
   useEffect(() => {
-    loadExpenses();
+    let isMounted = true;
+    db.expenses.orderBy('expense_date').reverse().toArray().then((list) => {
+      if (isMounted) setExpenses(list);
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const categories: { key: string; label: string }[] = [

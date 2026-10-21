@@ -18,23 +18,28 @@ export const ReportsPage = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [timeRange, setTimeRange] = useState<'today' | 'month' | 'all'>('month');
 
-  const loadData = async () => {
-    const s = await db.sales.orderBy('transaction_date').reverse().toArray();
-    const e = await db.expenses.orderBy('expense_date').reverse().toArray();
-    setSales(s);
-    setExpenses(e);
-  };
-
   useEffect(() => {
-    loadData();
+    let isMounted = true;
+    Promise.all([
+      db.sales.orderBy('transaction_date').reverse().toArray(),
+      db.expenses.orderBy('expense_date').reverse().toArray(),
+    ]).then(([s, e]) => {
+      if (isMounted) {
+        setSales(s);
+        setExpenses(e);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  const [currentDate] = useState(() => new Date());
+  const todayStr = currentDate.toISOString().slice(0, 10);
+  const monthStr = currentDate.toISOString().slice(0, 7);
 
   // Filter by Time Range
   const filteredSales = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const monthStr = now.toISOString().slice(0, 7);
-
     return sales.filter((s) => {
       const sDate = s.transaction_date.slice(0, 10);
       const sMonth = s.transaction_date.slice(0, 7);
@@ -43,13 +48,9 @@ export const ReportsPage = () => {
       if (timeRange === 'month') return sMonth === monthStr;
       return true;
     });
-  }, [sales, timeRange]);
+  }, [sales, timeRange, todayStr, monthStr]);
 
   const filteredExpenses = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const monthStr = now.toISOString().slice(0, 7);
-
     return expenses.filter((e) => {
       const eDate = e.expense_date.slice(0, 10);
       const eMonth = e.expense_date.slice(0, 7);
@@ -58,7 +59,7 @@ export const ReportsPage = () => {
       if (timeRange === 'month') return eMonth === monthStr;
       return true;
     });
-  }, [expenses, timeRange]);
+  }, [expenses, timeRange, todayStr, monthStr]);
 
   // Financial Metrics:
   // 1. Omset Penjualan (Revenue)

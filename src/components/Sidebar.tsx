@@ -12,9 +12,11 @@ import {
   User,
   Menu,
   X,
+  Download,
 } from 'lucide-react';
 import { playKeyClick } from '../utils/sound';
 import { getStoreSettings } from '../db';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 
 export type NavTab = 'dashboard' | 'kasir' | 'produk' | 'kulakan' | 'opname' | 'laporan' | 'pengaturan';
 
@@ -31,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const { canInstall, triggerInstall } = usePwaInstall();
   const settings = getStoreSettings();
 
   useEffect(() => {
@@ -185,6 +188,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Bottom Profile & Status Card */}
       <div className="pt-4 border-t border-cream-200 space-y-3">
+        {canInstall && (
+          <button
+            type="button"
+            onClick={() => {
+              playKeyClick();
+              triggerInstall();
+            }}
+            className="w-full p-2.5 bg-amber/20 hover:bg-amber/30 border-2 border-amber rounded-2xl flex items-center gap-2.5 transition-all text-left group active:scale-95 shadow-sm"
+            title="Pasang aplikasi ke Desktop/Layar Utama"
+          >
+            <div className="w-8 h-8 rounded-xl bg-forest text-amber flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform shadow-xs">
+              <Download className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black text-forest leading-tight">Pasang Aplikasi POS</p>
+              <p className="text-[10px] text-ink-muted">Akses instan dari desktop / HP</p>
+            </div>
+          </button>
+        )}
+
         <div className="p-3 bg-cream-50 rounded-2xl border border-cream-200 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-forest-surface flex items-center justify-center text-forest flex-shrink-0">
             <User className="w-5 h-5" />

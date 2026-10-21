@@ -1,9 +1,18 @@
-const CACHE_NAME = 'anugerah-store-v1';
+const CACHE_NAME = 'anugerah-store-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/logo.svg'
+  '/favicon.ico',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png',
+  '/favicon-96x96.png',
+  '/apple-touch-icon.png',
+  '/icon-192x192.png',
+  '/icon-512x512.png',
+  '/icon-maskable-192x192.png',
+  '/icon-maskable-512x512.png',
+  '/brand/logo-b1.jpg'
 ];
 
 self.addEventListener('install', (event) => {

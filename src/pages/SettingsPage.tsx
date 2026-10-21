@@ -13,7 +13,10 @@ import {
   Plus,
   Trash2,
   RotateCcw,
+  Laptop,
+  Smartphone,
 } from 'lucide-react';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 import {
   getStoreSettings,
   saveStoreSettings,
@@ -50,6 +53,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [isConfirmResetCategoryOpen, setIsConfirmResetCategoryOpen] = useState(false);
   const [isConfirmResetSeedOpen, setIsConfirmResetSeedOpen] = useState(false);
   const [isConfirmClearAllOpen, setIsConfirmClearAllOpen] = useState(false);
+  const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
 
   interface PendingRestore {
     products: unknown[];
@@ -657,6 +661,63 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
                 Simpan Profil Toko
               </button>
             </form>
+          </div>
+
+          {/* KARTU APLIKASI PWA & IKON SISTEM */}
+          <div className="bg-card p-6 sm:p-8 rounded-3xl shadow-card border border-cream-300 space-y-4">
+            <div className="flex items-center gap-2.5 pb-4 border-b border-cream-200">
+              <Laptop className="w-5 h-5 text-forest" />
+              <h3 className="font-extrabold text-lg text-ink">Aplikasi & Ikon Sistem (PWA)</h3>
+            </div>
+
+            <div className="flex items-center gap-4 p-4 bg-cream-50 rounded-2xl border border-cream-200">
+              <div className="w-16 h-16 rounded-2xl bg-forest overflow-hidden flex items-center justify-center flex-shrink-0 shadow-md border-2 border-amber">
+                <img
+                  src="/icon-192x192.png"
+                  alt="Ikon Anugerah Store"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-extrabold text-base text-ink">Anugerah Store POS</h4>
+                <p className="text-xs text-ink-muted">Si Pundi Makmur (Maskot Resmi Toko)</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                    isInstalled
+                      ? 'bg-status-successBg text-status-successText'
+                      : 'bg-amber/20 text-forest border border-amber/40'
+                  }`}>
+                    {isInstalled ? '✓ Terpasang di Perangkat' : 'Tersedia Sebagai Aplikasi'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-ink-muted leading-relaxed">
+              Ikon sistem telah dikonfigurasi lengkap untuk instalasi desktop Windows, macOS, Android, dan iOS. Saat dipasang, aplikasi kasir ini akan menampilkan ikon resmi <strong>Si Pundi Makmur</strong> di layar utama dan taskbar komputer Anda.
+            </p>
+
+            {canInstall && (
+              <button
+                type="button"
+                onClick={() => {
+                  playKeyClick();
+                  triggerInstall();
+                }}
+                className="w-full py-3.5 px-4 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-xs sm:text-sm shadow-elevated flex items-center justify-center gap-2 transition-all active:scale-95"
+              >
+                <Download className="w-4 h-4 stroke-[3]" />
+                <span>Pasang Aplikasi ke Komputer Sekarang</span>
+              </button>
+            )}
+
+            <div className="pt-3 border-t border-cream-200 flex items-center justify-between text-[11px] text-ink-subtle">
+              <span className="flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-forest" />
+                <span>Dukungan PWA Desktop & Mobile</span>
+              </span>
+              <span className="font-mono font-bold text-forest">100% Offline-Ready</span>
+            </div>
           </div>
         </div>
       </div>

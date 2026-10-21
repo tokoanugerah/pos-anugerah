@@ -1,17 +1,66 @@
 {
   "name": "Anugerah Store - POS Kasir Ritel",
   "short_name": "Anugerah Store",
-  "description": "Sistem Kasir Ritel & Manajemen Toko Anugerah Store",
+  "description": "Sistem Kasir Ritel & Manajemen Toko Anugerah Store - Cepat, Offline-First, dan Ramah Pengguna",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#F9F6EE",
   "theme_color": "#084C46",
+  "categories": ["business", "finance", "productivity", "shopping"],
   "icons": [
     {
-      "src": "/logo.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Buka Kasir POS",
+      "short_name": "Kasir",
+      "description": "Buka transaksi kasir Anugerah Store",
+      "url": "/?tab=kasir",
+      "icons": [
+        {
+          "src": "/icon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Katalog Produk",
+      "short_name": "Produk",
+      "description": "Kelola master data produk dan harga",
+      "url": "/?tab=produk",
+      "icons": [
+        {
+          "src": "/icon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

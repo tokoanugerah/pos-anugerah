@@ -455,42 +455,55 @@ export const INITIAL_EXPENSES: Expense[] = [
 ];
 
 /**
- * Inisialisasi basis data lokal jika masih kosong
+ * Inisialisasi basis data lokal Anugerah Store
+ * Dibuat bersih (kosong) dan siap untuk diisi produk & transaksi riil toko
  */
 export async function initializeDatabase() {
-  const count = await db.products.count();
-  if (count === 0) {
-    console.log('Mengisi data awal Anugerah Store ke Dexie.js (IndexedDB)...');
-    await db.products.bulkAdd(INITIAL_PRODUCTS);
+  // Cek apakah sistem baru pertama kali direset ke kondisi bersih
+  const isCleaned = localStorage.getItem('as_clean_start_v1');
+  if (!isCleaned) {
+    console.log('Mengosongkan sistem Anugerah Store agar seperti baru dan siap diisi...');
+    await clearAllStoreData();
+    localStorage.setItem('as_clean_start_v1', 'true');
+    return;
+  }
 
-    for (const item of INITIAL_SALES) {
-      await db.sales.add(item.sale);
-      await db.sale_items.bulkAdd(item.items);
-    }
-
-    await db.expenses.bulkAdd(INITIAL_EXPENSES);
-  } else {
-    // Migration: ensure every product has a unit field if missing
-    const prods = await db.products.toArray();
-    for (const p of prods) {
-      if (!p.unit) {
-        await db.products.update(p.id, { unit: 'pcs' });
-      }
+  // Migration guard: ensure every product has a unit field if missing
+  const prods = await db.products.toArray();
+  for (const p of prods) {
+    if (!p.unit) {
+      await db.products.update(p.id, { unit: 'pcs' });
     }
   }
 }
 
 /**
- * Reset data ke pengaturan awal
+ * Kosongkan seluruh data toko (Mulai dari Awal / Seperti Baru)
  */
-export async function resetDatabaseToInitial() {
-  await db.products.clear();
-  await db.sales.clear();
-  await db.sale_items.clear();
-  await db.expenses.clear();
-  await db.stock_audits.clear();
-  await db.monthly_summaries.clear();
+export async function clearAllStoreData() {
+  await db.transaction(
+    'rw',
+    [db.products, db.sales, db.sale_items, db.expenses, db.stock_audits, db.monthly_summaries],
+    async () => {
+      await db.products.clear();
+      await db.sales.clear();
+      await db.sale_items.clear();
+      await db.expenses.clear();
+      await db.stock_audits.clear();
+      await db.monthly_summaries.clear();
+    }
+  );
 
+  // Simpan pengaturan standar bersih
+  saveStoreSettings(DEFAULT_SETTINGS);
+  localStorage.setItem('as_clean_start_v1', 'true');
+}
+
+/**
+ * Muat data contoh simulasi (Opsional jika ingin mencoba demo)
+ */
+export async function loadDemoData() {
+  await clearAllStoreData();
   await db.products.bulkAdd(INITIAL_PRODUCTS);
   for (const item of INITIAL_SALES) {
     await db.sales.add(item.sale);
@@ -498,3 +511,5 @@ export async function resetDatabaseToInitial() {
   }
   await db.expenses.bulkAdd(INITIAL_EXPENSES);
 }
+
+export const resetDatabaseToInitial = clearAllStoreData;

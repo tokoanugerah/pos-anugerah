@@ -27,11 +27,13 @@ import { db, getProductCategories } from '../db';
 interface PosPageProps {
   products: Product[];
   onProductStockUpdate: () => void;
+  onNavigateToProducts?: () => void;
 }
 
 export const PosPage: React.FC<PosPageProps> = ({
   products,
   onProductStockUpdate,
+  onNavigateToProducts,
 }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -484,7 +486,30 @@ export const PosPage: React.FC<PosPageProps> = ({
               );
             })}
 
-            {filteredProducts.length === 0 && (
+            {products.length === 0 ? (
+              <div className="col-span-full py-16 px-6 text-center bg-card rounded-3xl border border-cream-300">
+                <div className="w-14 h-14 rounded-2xl bg-forest-surface text-forest flex items-center justify-center mx-auto mb-3">
+                  <Package className="w-7 h-7" />
+                </div>
+                <p className="font-black text-lg text-ink">Katalog Kasir Siap Diisi</p>
+                <p className="text-xs text-ink-muted mt-1 max-w-sm mx-auto">
+                  Belum ada produk terdaftar di sistem toko. Silakan tambahkan barang di menu "Katalog Produk" untuk mulai melayani transaksi kasir.
+                </p>
+                {onNavigateToProducts && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playKeyClick();
+                      onNavigateToProducts();
+                    }}
+                    className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-xs shadow-elevated transition-transform active:scale-95"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>Buka Menu Katalog Produk Sekarang</span>
+                  </button>
+                )}
+              </div>
+            ) : filteredProducts.length === 0 ? (
               <div className="col-span-full py-12 text-center bg-card rounded-3xl border border-cream-300">
                 <Package className="w-12 h-12 text-ink-subtle mx-auto mb-2 opacity-50" />
                 <p className="font-bold text-ink">Tidak ada produk yang sesuai kriteria pencarian</p>
@@ -492,7 +517,7 @@ export const PosPage: React.FC<PosPageProps> = ({
                   Coba ubah kata kunci pencarian atau scan barcode lain
                 </p>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 

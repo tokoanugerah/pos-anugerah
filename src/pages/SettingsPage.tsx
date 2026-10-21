@@ -17,7 +17,8 @@ import {
 import {
   getStoreSettings,
   saveStoreSettings,
-  resetDatabaseToInitial,
+  clearAllStoreData,
+  loadDemoData,
   db,
   DEFAULT_CATEGORIES,
   getProductCategories,
@@ -48,6 +49,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
   const [isConfirmResetCategoryOpen, setIsConfirmResetCategoryOpen] = useState(false);
   const [isConfirmResetSeedOpen, setIsConfirmResetSeedOpen] = useState(false);
+  const [isConfirmClearAllOpen, setIsConfirmClearAllOpen] = useState(false);
 
   interface PendingRestore {
     products: unknown[];
@@ -155,6 +157,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     onRefreshAll();
   };
 
+  const handlePromptClearAll = () => {
+    playKeyClick();
+    setIsConfirmClearAllOpen(true);
+  };
+
+  const executeClearAll = async () => {
+    try {
+      await clearAllStoreData();
+      playSuccessBeep();
+      setIsConfirmClearAllOpen(false);
+      setSettings(getStoreSettings());
+      setCategories(getProductCategories());
+      setRestoreStats('Sistem berhasil dikosongkan! Seluruh data produk & transaksi telah bersih dan siap diisi.');
+      addToast(
+        'delete',
+        'Sistem Bersih Seperti Baru',
+        'Seluruh produk dan transaksi toko telah dikosongkan. Toko siap diisi dari awal.'
+      );
+      onRefreshAll();
+    } catch (err) {
+      console.error(err);
+      addToast('warning', 'Gagal Mengosongkan', 'Terjadi kesalahan sistem saat mengosongkan database.');
+    }
+  };
+
   const handlePromptResetSeed = () => {
     playKeyClick();
     setIsConfirmResetSeedOpen(true);
@@ -162,9 +189,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
 
   const executeResetSeed = async () => {
     try {
-      await resetDatabaseToInitial();
+      await loadDemoData();
       playSuccessBeep();
       setIsConfirmResetSeedOpen(false);
+      setSettings(getStoreSettings());
+      setCategories(getProductCategories());
       setRestoreStats('Database berhasil dimuat ulang ke data contoh awal!');
       addToast('success', 'Reset Demo Berhasil', 'Database toko telah dimuat ulang dengan data contoh awal.');
       onRefreshAll();
@@ -527,17 +556,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
               </label>
             </div>
 
-            <div className="pt-4 border-t border-cream-200 flex items-center justify-between">
-              <span className="text-xs text-ink-muted">
-                Perlu reset untuk latihan atau demonstrasi?
-              </span>
+            <div className="pt-4 border-t border-cream-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handlePromptClearAll}
+                className="py-2.5 px-4 bg-red-50 hover:bg-red-100 text-status-dangerText border border-red-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors active:scale-95"
+              >
+                <Trash2 className="w-4 h-4 text-status-dangerText" />
+                <span>Kosongkan Seluruh Data (Mulai Baru)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handlePromptResetSeed}
-                className="text-xs text-status-dangerText hover:underline font-bold flex items-center gap-1"
+                className="text-xs text-ink-muted hover:text-forest hover:underline font-bold flex items-center justify-center gap-1.5 py-1"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Muat Ulang Data Contoh Awal (Demo Reset)</span>
+                <span>Muat Data Contoh Simulasi (Demo)</span>
               </button>
             </div>
           </div>
@@ -664,6 +699,33 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
           },
         ]}
         confirmText="Ya, Reset ke Standar"
+        cancelText="Batal"
+      />
+
+      {/* Confirmation Modal for CLEARING ALL STORE DATA (FRESH START) */}
+      <ActionConfirmModal
+        isOpen={isConfirmClearAllOpen}
+        onClose={() => setIsConfirmClearAllOpen(false)}
+        onConfirm={executeClearAll}
+        type="delete"
+        title="Kosongkan Seluruh Data Toko?"
+        description="Perhatian: Anda akan menghapus SELURUH data produk, riwayat transaksi kasir, pengeluaran, dan audit stok. Sistem akan kembali bersih total seperti baru dan siap diisi dari awal."
+        details={[
+          {
+            label: 'Tindakan',
+            value: 'Hapus Bersih Total Database Toko',
+            highlight: true,
+          },
+          {
+            label: 'Kondisi Sistem',
+            value: 'Sistem siap diisi dengan produk & transaksi riil toko',
+          },
+          {
+            label: 'Saran',
+            value: 'Pastikan sudah mengunduh cadangan JSON jika data lama masih diperlukan',
+          },
+        ]}
+        confirmText="Ya, Kosongkan & Mulai Baru"
         cancelText="Batal"
       />
 

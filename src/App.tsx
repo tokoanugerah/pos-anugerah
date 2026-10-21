@@ -66,6 +66,7 @@ export function App() {
               <PosPage
                 products={products}
                 onProductStockUpdate={loadProducts}
+                onNavigateToProducts={() => setCurrentTab('produk')}
               />
             )}
 

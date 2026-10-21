@@ -515,13 +515,37 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 );
               })}
 
-              {filteredProducts.length === 0 && (
+              {products.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-ink-muted">
-                    Tidak ada barang yang ditemukan.
+                  <td colSpan={10} className="py-16 text-center">
+                    <div className="max-w-md mx-auto space-y-4">
+                      <div className="w-16 h-16 mx-auto rounded-3xl bg-forest-surface text-forest flex items-center justify-center">
+                        <PackagePlus className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-black text-ink">Katalog Barang Masih Kosong & Siap Diisi</h3>
+                        <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                          Sistem siap digunakan! Silakan daftarkan produk dagangan toko Anda melalui barcode scanner atau tombol di bawah ini.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenAddModal}
+                        className="inline-flex items-center gap-2 px-5 py-3 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-sm shadow-elevated transition-transform active:scale-95"
+                      >
+                        <PackagePlus className="w-4 h-4" />
+                        <span>+ Tambah Barang Pertama Sekarang</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              )}
+              ) : filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-ink-muted font-semibold">
+                    Tidak ada barang yang sesuai dengan filter atau kata kunci pencarian.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

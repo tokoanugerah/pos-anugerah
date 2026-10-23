@@ -9,54 +9,83 @@ interface UseBarcodeScannerProps {
 
 export function useBarcodeScanner({
   onScan,
-  minChars = 4,
-  maxDelayMs = 60,
+  minChars = 3,
+  maxDelayMs = 150,
   enabled = true,
 }: UseBarcodeScannerProps) {
   const bufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
+  const onScanRef = useRef(onScan);
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore if user is actively typing in an input or textarea that shouldn't be intercepted
       const target = event.target as HTMLElement | null;
-      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      const isInput = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
       const isScannerInput = target?.getAttribute('data-scanner-input') === 'true';
 
-      // If user pressed Enter
-      if (event.key === 'Enter') {
-        const barcode = bufferRef.current.trim();
-        if (barcode.length >= minChars) {
-          event.preventDefault();
-          onScan(barcode);
-          bufferRef.current = '';
-          return;
-        }
-        bufferRef.current = '';
+      // Ignore pure control/modifier keys that scanners or OS might emit
+      if (
+        event.key === 'Shift' ||
+        event.key === 'Control' ||
+        event.key === 'Alt' ||
+        event.key === 'Meta' ||
+        event.key === 'CapsLock' ||
+        event.key === 'Tab' ||
+        event.key === 'Escape'
+      ) {
         return;
       }
 
-      // Check key timing to distinguish scanner vs normal manual human typing
       const currentTime = Date.now();
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
-      // If typed keys are spaced out more than maxDelayMs, reset buffer unless inside scanner input
+      // Handle barcode termination: standard scanners send 'Enter'
+      if (event.key === 'Enter') {
+        let scannedCode = bufferRef.current.trim();
+
+        // Fallback 1: If user was focused on an input element (like the barcode input), check the input value
+        if (!scannedCode && isInput && target) {
+          const val = (target as HTMLInputElement).value;
+          if (val && val.trim().length >= minChars) {
+            scannedCode = val.trim();
+          }
+        }
+
+        if (scannedCode.length >= minChars) {
+          event.preventDefault();
+          event.stopPropagation();
+          bufferRef.current = '';
+          onScanRef.current(scannedCode);
+          return;
+        }
+
+        // Reset buffer if Enter pressed with insufficient length
+        bufferRef.current = '';
+        return;
+      }
+
+      // If keys are spaced too far apart (e.g. human typing manually outside scanner input), reset buffer
       if (timeDiff > maxDelayMs && bufferRef.current.length > 0) {
         bufferRef.current = '';
       }
 
-      // Only collect printable single characters
+      // Capture single printable character
       if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         bufferRef.current += event.key;
 
-        // If not in input, prevent default only if we suspect it's a rapid scanner burst
-        if (!isInput && bufferRef.current.length > 3 && timeDiff <= maxDelayMs) {
+        // If scanning outside of an input, prevent default browser shortcut actions
+        if (!isInput && bufferRef.current.length >= 2) {
+          // Keep browser from executing page hotkeys while scanner bursts digits
           event.preventDefault();
         } else if (isScannerInput) {
-          // Allowed
+          // Let it type into the visible input as feedback
         }
       }
     };
@@ -65,5 +94,5 @@ export function useBarcodeScanner({
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [onScan, minChars, maxDelayMs, enabled]);
+  }, [minChars, maxDelayMs, enabled]);
 }

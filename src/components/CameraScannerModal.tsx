@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, X, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { playSuccessBeep, playErrorBeep } from '../utils/sound';
 
 interface CameraScannerModalProps {
@@ -15,152 +16,105 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   onDetected,
   title = 'Scan Barcode Produk Menggunakan Kamera',
 }) => {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [isScanning, setIsScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const animationFrameRef = useRef<number | null>(null);
-  const lastScanTimeRef = useRef<number>(0);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const containerId = 'anugerah-barcode-reader';
 
-  const stopCamera = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop();
-        } catch {
-          // ignore
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
         }
-      });
-      streamRef.current = null;
+        scannerRef.current.clear();
+      } catch (e) {
+        console.warn('Gagal mematikan kamera:', e);
+      }
+      scannerRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setIsScanning(false);
+    setIsCameraActive(false);
   }, []);
 
-  const setupBarcodeDetection = useCallback(() => {
-    if ('BarcodeDetector' in window) {
-      try {
-        const barcodeDetector = new (window as unknown as {
-          BarcodeDetector: new (options?: { formats: string[] }) => {
-            detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
-          };
-        }).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
-        });
+  const startScanner = useCallback(async () => {
+    setErrorMsg('');
+    await stopScanner();
 
-        const detectFrame = async () => {
-          if (!videoRef.current || videoRef.current.readyState < 2) {
-            animationFrameRef.current = requestAnimationFrame(detectFrame);
-            return;
+    // Check if mediaDevices exists
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setErrorMsg('Peramban ini tidak mendukung akses kamera langsung. Silakan gunakan input manual atau scanner USB.');
+      return;
+    }
+
+    try {
+      const html5QrCode = new Html5Qrcode(containerId, {
+        verbose: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+        ],
+      });
+      scannerRef.current = html5QrCode;
+
+      await html5QrCode.start(
+        { facingMode: 'environment' },
+        {
+          fps: 15,
+          qrbox: { width: 280, height: 180 },
+        },
+        (decodedText) => {
+          const cleanCode = decodedText.trim();
+          if (cleanCode) {
+            playSuccessBeep();
+            stopScanner();
+            onDetected(cleanCode);
+            onClose();
           }
+        },
+        () => {
+          // Frame processed without barcode
+        }
+      );
 
-          const now = Date.now();
-          // Throttle detection to every 120ms to keep CPU/GPU low & prevent stutter
-          if (now - lastScanTimeRef.current > 120) {
-            lastScanTimeRef.current = now;
-            try {
-              const barcodes = await barcodeDetector.detect(videoRef.current);
-              if (barcodes.length > 0 && barcodes[0].rawValue) {
-                const code = barcodes[0].rawValue.trim();
-                playSuccessBeep();
-                stopCamera();
-                onDetected(code);
-                onClose();
-                return;
-              }
-            } catch {
-              // Frame dropped or detection failed, continue to next frame
-            }
-          }
-
-          animationFrameRef.current = requestAnimationFrame(detectFrame);
-        };
-
-        animationFrameRef.current = requestAnimationFrame(detectFrame);
-      } catch (e) {
-        console.warn('BarcodeDetector gagal diinisialisasi:', e);
+      setIsCameraActive(true);
+    } catch (err: unknown) {
+      console.warn('Gagal memulai Html5Qrcode:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes('NotAllowedError') || errMsg.includes('Permission denied')) {
+        setErrorMsg('Izin akses kamera ditolak. Silakan izinkan akses kamera di ikon gembok peramban.');
+      } else if (errMsg.includes('NotFoundError') || errMsg.includes('no camera')) {
+        setErrorMsg('Kamera atau webcam tidak ditemukan pada perangkat ini.');
+      } else {
+        setErrorMsg('Tidak dapat mengakses kamera. Pastikan kamera tidak sedang dipakai aplikasi lain.');
       }
     }
-  }, [onDetected, onClose, stopCamera]);
+  }, [stopScanner, onDetected, onClose]);
 
   useEffect(() => {
-    let active = true;
+    if (!isOpen) return;
 
-    if (isOpen) {
-      navigator.mediaDevices?.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      })
-      .then(async (stream) => {
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.setAttribute('playsinline', 'true');
-          await videoRef.current.play();
-          if (active) {
-            setIsScanning(true);
-            setupBarcodeDetection();
-          }
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          console.warn('Akses kamera tidak diizinkan atau tidak ditemukan:', err);
-          setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera aktif atau gunakan input manual.');
-        }
-      });
-    }
+    // Small timeout to allow container element to render in DOM
+    const timer = setTimeout(() => {
+      startScanner();
+    }, 100);
 
     return () => {
-      active = false;
-      stopCamera();
+      clearTimeout(timer);
+      stopScanner();
     };
-  }, [isOpen, setupBarcodeDetection, stopCamera]);
-
-  const handleRetry = () => {
-    setErrorMsg('');
-    navigator.mediaDevices?.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    })
-    .then(async (stream) => {
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        await videoRef.current.play();
-        setIsScanning(true);
-        setupBarcodeDetection();
-      }
-    })
-    .catch((err) => {
-      console.warn('Retry kamera gagal:', err);
-      setErrorMsg('Kamera tetap tidak dapat diakses.');
-    });
-  };
+  }, [isOpen, startScanner, stopScanner]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCode.trim()) {
       playSuccessBeep();
-      stopCamera();
+      stopScanner();
       onDetected(manualCode.trim());
       setManualCode('');
       onClose();
@@ -172,7 +126,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-forest-dark/70 backdrop-blur-sm p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-forest-dark/80 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-card w-full max-w-lg rounded-3xl p-6 shadow-modal border-2 border-cream-300 relative flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-cream-200">
@@ -186,8 +140,9 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={() => {
-              stopCamera();
+              stopScanner();
               onClose();
             }}
             className="p-2 rounded-2xl bg-cream-100 hover:bg-cream-200 text-ink transition-colors"
@@ -196,38 +151,29 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
           </button>
         </div>
 
-        {/* Camera Viewport */}
-        <div className="mt-4 relative bg-black rounded-2xl overflow-hidden aspect-[4/3] flex items-center justify-center">
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover"
-            autoPlay
-            playsInline
-            muted
-          />
+        {/* Camera Viewport Container */}
+        <div className="mt-4 relative bg-black rounded-2xl overflow-hidden min-h-[260px] flex items-center justify-center">
+          <div id={containerId} className="w-full h-full" />
 
-          {/* Scanner Guide Reticle */}
-          {isScanning && (
-            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-              <div className="w-3/4 h-1/2 border-2 border-amber rounded-2xl relative shadow-[0_0_15px_rgba(247,202,88,0.5)]">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-amber animate-pulse shadow-[0_0_8px_#F7CA58]" />
-              </div>
-              <p className="mt-3 text-xs font-semibold text-white bg-black/60 px-3 py-1 rounded-full">
-                Posisikan garis merah/kuning di atas barcode
-              </p>
+          {errorMsg && (
+            <div className="absolute inset-0 bg-cream-100 flex flex-col items-center justify-center p-6 text-center z-10">
+              <AlertCircle className="w-12 h-12 text-status-dangerText mb-2" />
+              <p className="text-sm font-semibold text-ink leading-relaxed max-w-xs">{errorMsg}</p>
+              <button
+                type="button"
+                onClick={startScanner}
+                className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-amber hover:bg-amber-hover text-forest font-black rounded-xl text-xs shadow-elevated transition-transform active:scale-95"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Coba Nyalakan Lagi</span>
+              </button>
             </div>
           )}
 
-          {errorMsg && (
-            <div className="absolute inset-0 bg-cream-100 flex flex-col items-center justify-center p-6 text-center">
-              <AlertCircle className="w-12 h-12 text-status-dangerText mb-2" />
-              <p className="text-sm font-semibold text-ink">{errorMsg}</p>
-              <button
-                onClick={handleRetry}
-                className="mt-4 flex items-center gap-2 px-4 py-2 bg-amber hover:bg-amber-hover text-forest font-bold rounded-xl text-sm"
-              >
-                <RefreshCw className="w-4 h-4" /> Coba Nyalakan Lagi
-              </button>
+          {!isCameraActive && !errorMsg && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-black/70">
+              <RefreshCw className="w-8 h-8 animate-spin text-amber mb-2" />
+              <p className="text-xs font-semibold">Menghubungkan ke sensor kamera...</p>
             </div>
           )}
         </div>
@@ -236,7 +182,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         <div className="mt-5 pt-4 border-t border-cream-200">
           <p className="text-xs font-medium text-ink-muted mb-2 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-dark" />
-            Atau masukkan kode barcode secara manual jika kamera buram:
+            Atau masukkan kode barcode secara manual jika scanner kamera buram:
           </p>
           <form onSubmit={handleManualSubmit} className="flex gap-2">
             <input

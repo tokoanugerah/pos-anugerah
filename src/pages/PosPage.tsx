@@ -28,12 +28,14 @@ interface PosPageProps {
   products: Product[];
   onProductStockUpdate: () => void;
   onNavigateToProducts?: () => void;
+  onRegisterNewProductWithBarcode?: (barcode: string) => void;
 }
 
 export const PosPage: React.FC<PosPageProps> = ({
   products,
   onProductStockUpdate,
   onNavigateToProducts,
+  onRegisterNewProductWithBarcode,
 }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,6 +47,8 @@ export const PosPage: React.FC<PosPageProps> = ({
   const [completedSaleItems, setCompletedSaleItems] = useState<SaleItem[]>([]);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [scannerNotification, setScannerNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [unregisteredBarcode, setUnregisteredBarcode] = useState<string | null>(null);
+  const lastProcessedRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
 
   // Cart Delete & Clear Confirmation State
   const [cartItemToDelete, setCartItemToDelete] = useState<CartItem | null>(null);
@@ -222,6 +226,13 @@ export const PosPage: React.FC<PosPageProps> = ({
     const cleanCode = scannedCode.trim();
     if (!cleanCode) return;
 
+    // Guard duplicate trigger within 300ms
+    const now = Date.now();
+    if (lastProcessedRef.current.code === cleanCode && now - lastProcessedRef.current.time < 300) {
+      return;
+    }
+    lastProcessedRef.current = { code: cleanCode, time: now };
+
     // Search product by barcode
     const found = products.find(
       (p) => p.barcode === cleanCode || p.barcode.toLowerCase() === cleanCode.toLowerCase()
@@ -232,8 +243,9 @@ export const PosPage: React.FC<PosPageProps> = ({
       setBarcodeInput('');
     } else {
       playErrorBeep();
-      showNotification(`Barcode [${cleanCode}] belum terdaftar di Anugerah Store!`, 'error');
       setBarcodeInput('');
+      setUnregisteredBarcode(cleanCode);
+      showNotification(`Barcode [${cleanCode}] belum terdaftar di Anugerah Store!`, 'error');
     }
   };
 
@@ -751,6 +763,30 @@ export const PosPage: React.FC<PosPageProps> = ({
         ]}
         confirmText="Ya, Kosongkan Keranjang"
         cancelText="Kembali ke Kasir"
+      />
+
+      {/* Unregistered Barcode Prompt Modal */}
+      <ActionConfirmModal
+        isOpen={!!unregisteredBarcode}
+        onClose={() => setUnregisteredBarcode(null)}
+        onConfirm={() => {
+          const code = unregisteredBarcode;
+          setUnregisteredBarcode(null);
+          if (code && onRegisterNewProductWithBarcode) {
+            onRegisterNewProductWithBarcode(code);
+          } else if (onNavigateToProducts) {
+            onNavigateToProducts();
+          }
+        }}
+        type="warning"
+        title="Barcode Belum Terdaftar"
+        description="Barang dengan nomor barcode ini belum terdaftar di sistem Anugerah Store. Apakah Anda ingin mendaftarkannya sekarang?"
+        details={[
+          { label: 'Nomor Barcode', value: unregisteredBarcode || '', highlight: true },
+          { label: 'Tindakan', value: 'Buka Menu Katalog & Isi Data Barang' },
+        ]}
+        confirmText="Ya, Daftarkan Barang Ini"
+        cancelText="Tutup"
       />
 
       {/* Floating Feedback Toast Alerts */}

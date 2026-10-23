@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   PackagePlus,
   Search,
@@ -17,15 +17,20 @@ import { CameraScannerModal } from '../components/CameraScannerModal';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { db, getProductCategories, clearAllStoreData } from '../db';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 interface ProductsPageProps {
   products: Product[];
   onRefresh: () => void;
+  initialBarcode?: string | null;
+  onClearInitialBarcode?: () => void;
 }
 
 export const ProductsPage: React.FC<ProductsPageProps> = ({
   products,
   onRefresh,
+  initialBarcode,
+  onClearInitialBarcode,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
@@ -33,6 +38,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const productNameInputRef = useRef<HTMLInputElement | null>(null);
+  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
 
   // Confirmation Modals State
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -155,6 +162,86 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     setFormMinStockAlertStr(String(p.min_stock_alert));
     setIsModalOpen(true);
   };
+
+  // Listener untuk barcode bawaan dari tab lain (misal dari Kasir yang belum terdaftar)
+  useEffect(() => {
+    if (!initialBarcode) return;
+    const timer = setTimeout(() => {
+      const available = getProductCategories();
+      setEditingProduct(null);
+      setFormBarcode(initialBarcode);
+      setFormName('');
+      setFormCategory(available[0] || 'Sembako');
+      setFormUnit('pcs');
+      setFormCostPriceStr('');
+      setFormSellingPriceStr('');
+      setFormStockQuantityStr('10');
+      setFormMinStockAlertStr('5');
+      setIsModalOpen(true);
+      playSuccessBeep();
+      addToast('success', 'Barcode Dimuat', `Nomor barcode [${initialBarcode}] siap didaftarkan.`);
+      setTimeout(() => {
+        productNameInputRef.current?.focus();
+      }, 150);
+      if (onClearInitialBarcode) {
+        onClearInitialBarcode();
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [initialBarcode, onClearInitialBarcode]);
+
+  // Setup USB / Bluetooth Scanner di Halaman Katalog Produk
+  useBarcodeScanner({
+    onScan: (code) => {
+      const clean = code.trim();
+      if (!clean) return;
+
+      // 1. Jika modal form tambah/edit sedang terbuka: isi input barcode langsung
+      if (isModalOpen) {
+        setFormBarcode(clean);
+        playSuccessBeep();
+        addToast('success', 'Barcode Terbaca', `Nomor barcode [${clean}] berhasil dimasukkan.`);
+        setTimeout(() => {
+          productNameInputRef.current?.focus();
+        }, 120);
+        return;
+      }
+
+      // 2. Jika modal tertutup: cek apakah produk sudah ada di katalog
+      const existing = products.find(
+        (p) => p.barcode === clean || p.barcode.toLowerCase() === clean.toLowerCase()
+      );
+
+      if (existing) {
+        playSuccessBeep();
+        handleOpenEditModal(existing);
+        addToast('success', 'Produk Ditemukan', `Membuka data produk "${existing.name}".`);
+      } else {
+        playSuccessBeep();
+        const available = getProductCategories();
+        setEditingProduct(null);
+        setFormBarcode(clean);
+        setFormName('');
+        setFormCategory(available[0] || 'Sembako');
+        setFormUnit('pcs');
+        setFormCostPriceStr('');
+        setFormSellingPriceStr('');
+        setFormStockQuantityStr('10');
+        setFormMinStockAlertStr('5');
+        setIsModalOpen(true);
+        addToast(
+          'success',
+          'Barcode Baru Terdeteksi',
+          `Nomor barcode [${clean}] belum ada di katalog. Form pendaftaran barang dibuka!`
+        );
+        setTimeout(() => {
+          productNameInputRef.current?.focus();
+        }, 150);
+      }
+    },
+    enabled: !isCameraOpen,
+  });
 
   // Clean numeric input handler: allows full deletion without leaving '0'
   const handleNumericInput = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -594,18 +681,26 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 </label>
                 <div className="flex gap-2">
                   <input
+                    ref={barcodeInputRef}
                     type="text"
+                    data-scanner-input="true"
                     required
                     value={formBarcode}
                     onChange={(e) => setFormBarcode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        productNameInputRef.current?.focus();
+                      }
+                    }}
                     placeholder="Scan kemasan atau ketik barcode (cth: 899886620022)"
                     className="flex-1 px-4 py-3 bg-cream-50 border-2 border-cream-300 rounded-2xl font-mono font-bold text-base text-ink focus:outline-none focus:ring-2 focus:ring-forest"
                   />
                   <button
                     type="button"
                     onClick={() => setIsCameraOpen(true)}
-                    className="px-4 py-3 bg-forest hover:bg-forest-light text-white font-bold rounded-2xl flex items-center gap-1.5 text-xs"
-                    title="Gunakan Kamera HP"
+                    className="px-4 py-3 bg-forest hover:bg-forest-light text-white font-bold rounded-2xl flex items-center gap-1.5 text-xs shadow-sm active:scale-95 transition-all"
+                    title="Gunakan Kamera HP / Laptop"
                   >
                     <Camera className="w-4 h-4 text-amber" />
                     <span>Scan</span>
@@ -619,6 +714,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                   Nama Barang Lengkap *
                 </label>
                 <input
+                  ref={productNameInputRef}
                   type="text"
                   required
                   value={formName}
@@ -780,7 +876,13 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       <CameraScannerModal
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onDetected={(code) => setFormBarcode(code)}
+        onDetected={(code) => {
+          setFormBarcode(code);
+          addToast('success', 'Barcode Kamera Terbaca', `Barcode [${code}] berhasil dipindai.`);
+          setTimeout(() => {
+            productNameInputRef.current?.focus();
+          }, 150);
+        }}
         title="Scan Barcode Kemasan untuk Produk"
       />
 

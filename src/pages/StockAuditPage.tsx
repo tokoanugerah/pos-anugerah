@@ -13,6 +13,7 @@ import { formatDateIndo, generateId } from '../utils/format';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db } from '../db';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 interface StockAuditPageProps {
   products: Product[];
@@ -68,6 +69,13 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
       setFeedbackMsg({ text: `Barcode [${clean}] tidak ditemukan di katalog produk!`, type: 'error' });
     }
   };
+
+  useBarcodeScanner({
+    onScan: (code) => {
+      handleBarcodeSearch(code);
+    },
+    enabled: !isCameraOpen,
+  });
 
   const physicalCount = Number(physicalCountStr) || 0;
 

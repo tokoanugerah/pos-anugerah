@@ -108,8 +108,12 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   }, [formCategory]);
 
   const standardUnits = useMemo(() => {
-    return ['pcs', 'kg', 'liter', 'bungkus', 'botol', 'sak', 'pouch', 'renceng', 'dus', 'batang', 'kaleng', 'sachet'];
-  }, []);
+    const list = ['pcs', 'kg', 'liter', 'ml', 'gram'];
+    if (formUnit && !list.includes(formUnit)) {
+      return [...list, formUnit];
+    }
+    return list;
+  }, [formUnit]);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
@@ -802,24 +806,19 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1">
-                    Satuan Unit (ex: pcs, kg, liter) *
+                    Satuan Unit *
                   </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      list="unit-suggestions"
-                      required
-                      value={formUnit}
-                      onChange={(e) => setFormUnit(e.target.value)}
-                      placeholder="pcs"
-                      className="w-full px-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-bold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest"
-                    />
-                    <datalist id="unit-suggestions">
-                      {standardUnits.map((u) => (
-                        <option key={u} value={u} />
-                      ))}
-                    </datalist>
-                  </div>
+                  <select
+                    value={formUnit}
+                    onChange={(e) => setFormUnit(e.target.value)}
+                    className="w-full px-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-bold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest cursor-pointer"
+                  >
+                    {standardUnits.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

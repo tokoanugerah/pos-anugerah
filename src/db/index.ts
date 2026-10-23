@@ -19,6 +19,14 @@ export class AnugerahStoreDB extends Dexie {
       stock_audits: 'id, audit_date, product_id, barcode',
       monthly_summaries: 'month_year',
     });
+    this.version(3).stores({
+      products: 'id, barcode, name, category, unit, cost_price, selling_price, stock_quantity, is_active',
+      sales: 'id, &receipt_number, transaction_date, payment_method, cashier_name',
+      sale_items: 'id, sale_id, product_id',
+      expenses: 'id, expense_date, category',
+      stock_audits: 'id, audit_date, product_id, barcode',
+      monthly_summaries: 'month_year',
+    });
   }
 }
 

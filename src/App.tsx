@@ -14,7 +14,6 @@ export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [initialProductBarcode, setInitialProductBarcode] = useState<string | null>(null);
 
   const loadProducts = useCallback(async () => {
     try {
@@ -80,10 +79,6 @@ export function App() {
                 products={products}
                 onProductStockUpdate={loadProducts}
                 onNavigateToProducts={() => setCurrentTab('produk')}
-                onRegisterNewProductWithBarcode={(barcode) => {
-                  setInitialProductBarcode(barcode);
-                  setCurrentTab('produk');
-                }}
               />
             )}
 
@@ -91,8 +86,6 @@ export function App() {
               <ProductsPage
                 products={products}
                 onRefresh={loadProducts}
-                initialBarcode={initialProductBarcode}
-                onClearInitialBarcode={() => setInitialProductBarcode(null)}
               />
             )}
 

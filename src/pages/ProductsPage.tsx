@@ -4,42 +4,38 @@ import {
   Search,
   Edit2,
   Trash2,
-  Camera,
   Download,
   X,
   Check,
   Percent,
+  ImagePlus,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { Product } from '../types';
 import { formatRupiah, formatNumber, generateId } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
-import { CameraScannerModal } from '../components/CameraScannerModal';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { db, getProductCategories, clearAllStoreData } from '../db';
-import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { compressProductImage } from '../utils/image';
 
 interface ProductsPageProps {
   products: Product[];
   onRefresh: () => void;
-  initialBarcode?: string | null;
-  onClearInitialBarcode?: () => void;
 }
 
 export const ProductsPage: React.FC<ProductsPageProps> = ({
   products,
   onRefresh,
-  initialBarcode,
-  onClearInitialBarcode,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
-  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Confirmation Modals State
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -80,7 +76,9 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   }, [products, onRefresh]);
 
   // Form State using Strings to eliminate sticky leading zero bug (024500)
-  const [formBarcode, setFormBarcode] = useState('');
+  const [formImage, setFormImage] = useState<string>('');
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [formSku, setFormSku] = useState('');
   const [formName, setFormName] = useState('');
   const [formCategory, setFormCategory] = useState('Sembako');
   const [formUnit, setFormUnit] = useState('pcs');
@@ -118,7 +116,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       const matchSearch =
         !q ||
         p.name.toLowerCase().includes(q) ||
-        p.barcode.toLowerCase().includes(q) ||
+        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
         p.category.toLowerCase().includes(q);
 
       let matchStock = true;
@@ -137,7 +135,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     playKeyClick();
     const available = getProductCategories();
     setEditingProduct(null);
-    setFormBarcode('');
+    setFormImage('');
+    setFormSku('');
     setFormName('');
     setFormCategory(available[0] || 'Sembako');
     setFormUnit('pcs');
@@ -146,13 +145,17 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     setFormStockQuantityStr('10');
     setFormMinStockAlertStr('5');
     setIsModalOpen(true);
+    setTimeout(() => {
+      productNameInputRef.current?.focus();
+    }, 150);
   };
 
   // Open Modal for Edit
   const handleOpenEditModal = (p: Product) => {
     playKeyClick();
     setEditingProduct(p);
-    setFormBarcode(p.barcode);
+    setFormImage(p.image || '');
+    setFormSku(p.barcode || '');
     setFormName(p.name);
     setFormCategory(p.category);
     setFormUnit(p.unit || 'pcs');
@@ -163,85 +166,33 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     setIsModalOpen(true);
   };
 
-  // Listener untuk barcode bawaan dari tab lain (misal dari Kasir yang belum terdaftar)
-  useEffect(() => {
-    if (!initialBarcode) return;
-    const timer = setTimeout(() => {
-      const available = getProductCategories();
-      setEditingProduct(null);
-      setFormBarcode(initialBarcode);
-      setFormName('');
-      setFormCategory(available[0] || 'Sembako');
-      setFormUnit('pcs');
-      setFormCostPriceStr('');
-      setFormSellingPriceStr('');
-      setFormStockQuantityStr('10');
-      setFormMinStockAlertStr('5');
-      setIsModalOpen(true);
+  // Handle image upload from camera or file picker
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsProcessingImage(true);
+      const compressedDataUrl = await compressProductImage(file, 480, 0.82);
+      setFormImage(compressedDataUrl);
       playSuccessBeep();
-      addToast('success', 'Barcode Dimuat', `Nomor barcode [${initialBarcode}] siap didaftarkan.`);
-      setTimeout(() => {
-        productNameInputRef.current?.focus();
-      }, 150);
-      if (onClearInitialBarcode) {
-        onClearInitialBarcode();
-      }
-    }, 50);
+      addToast('success', 'Foto Produk Siap', 'Foto berhasil dikompres dan dimuat untuk produk ini.');
+    } catch (err) {
+      console.error('Gagal memproses gambar:', err);
+      playErrorBeep();
+      addToast('warning', 'Gagal Memuat Foto', 'Format gambar tidak didukung atau terjadi kesalahan sistem.');
+    } finally {
+      setIsProcessingImage(false);
+      // Reset input value so re-selecting same file triggers onChange
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
-    return () => clearTimeout(timer);
-  }, [initialBarcode, onClearInitialBarcode]);
-
-  // Setup USB / Bluetooth Scanner di Halaman Katalog Produk
-  useBarcodeScanner({
-    onScan: (code) => {
-      const clean = code.trim();
-      if (!clean) return;
-
-      // 1. Jika modal form tambah/edit sedang terbuka: isi input barcode langsung
-      if (isModalOpen) {
-        setFormBarcode(clean);
-        playSuccessBeep();
-        addToast('success', 'Barcode Terbaca', `Nomor barcode [${clean}] berhasil dimasukkan.`);
-        setTimeout(() => {
-          productNameInputRef.current?.focus();
-        }, 120);
-        return;
-      }
-
-      // 2. Jika modal tertutup: cek apakah produk sudah ada di katalog
-      const existing = products.find(
-        (p) => p.barcode === clean || p.barcode.toLowerCase() === clean.toLowerCase()
-      );
-
-      if (existing) {
-        playSuccessBeep();
-        handleOpenEditModal(existing);
-        addToast('success', 'Produk Ditemukan', `Membuka data produk "${existing.name}".`);
-      } else {
-        playSuccessBeep();
-        const available = getProductCategories();
-        setEditingProduct(null);
-        setFormBarcode(clean);
-        setFormName('');
-        setFormCategory(available[0] || 'Sembako');
-        setFormUnit('pcs');
-        setFormCostPriceStr('');
-        setFormSellingPriceStr('');
-        setFormStockQuantityStr('10');
-        setFormMinStockAlertStr('5');
-        setIsModalOpen(true);
-        addToast(
-          'success',
-          'Barcode Baru Terdeteksi',
-          `Nomor barcode [${clean}] belum ada di katalog. Form pendaftaran barang dibuka!`
-        );
-        setTimeout(() => {
-          productNameInputRef.current?.focus();
-        }, 150);
-      }
-    },
-    enabled: !isCameraOpen,
-  });
+  const handleRemoveImage = () => {
+    playKeyClick();
+    setFormImage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // Clean numeric input handler: allows full deletion without leaving '0'
   const handleNumericInput = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,9 +208,9 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   // Prompt Save Product: if editing, triggers ActionConfirmModal first
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formBarcode.trim() || !formName.trim()) {
+    if (!formName.trim()) {
       playErrorBeep();
-      addToast('warning', 'Data Belum Lengkap', 'Mohon isi nomor barcode dan nama barang.');
+      addToast('warning', 'Data Belum Lengkap', 'Mohon isi nama barang.');
       return;
     }
 
@@ -277,10 +228,11 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const executeSaveProduct = async () => {
     try {
       const nowIso = new Date().toISOString();
+      const codeToUse = formSku.trim() || (editingProduct?.barcode ?? generateId('sku'));
 
       if (editingProduct) {
         await db.products.update(editingProduct.id, {
-          barcode: formBarcode.trim(),
+          barcode: codeToUse,
           name: formName.trim(),
           category: formCategory,
           unit: formUnit.trim() || 'pcs',
@@ -288,6 +240,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           selling_price: formSellingPrice,
           stock_quantity: formStockQuantity,
           min_stock_alert: formMinStockAlert,
+          image: formImage || undefined,
           updated_at: nowIso,
         });
 
@@ -300,20 +253,9 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           `Data produk "${formName}" berhasil diperbarui di katalog toko.`
         );
       } else {
-        const existing = await db.products.where('barcode').equals(formBarcode.trim()).first();
-        if (existing) {
-          playErrorBeep();
-          addToast(
-            'warning',
-            'Barcode Duplikat',
-            `Barcode ${formBarcode} sudah digunakan oleh "${existing.name}". Gunakan barcode lain!`
-          );
-          return;
-        }
-
         const newProduct: Product = {
           id: generateId('prod'),
-          barcode: formBarcode.trim(),
+          barcode: codeToUse,
           name: formName.trim(),
           category: formCategory,
           unit: formUnit.trim() || 'pcs',
@@ -321,6 +263,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           selling_price: formSellingPrice,
           stock_quantity: formStockQuantity,
           min_stock_alert: formMinStockAlert,
+          image: formImage || undefined,
           is_active: 1,
           created_at: nowIso,
           updated_at: nowIso,
@@ -359,7 +302,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       addToast(
         'delete',
         'Produk Telah Dihapus',
-        `"${productToDelete.name}" (Barcode: ${productToDelete.barcode}) telah dihapus dari sistem.`
+        `"${productToDelete.name}" telah dihapus dari sistem toko.`
       );
       setProductToDelete(null);
       onRefresh();
@@ -372,10 +315,10 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   // Export to CSV
   const handleExportCSV = () => {
     playKeyClick();
-    const headers = ['ID', 'Barcode', 'Nama Barang', 'Kategori', 'Satuan', 'HPP Modal', 'Harga Jual', 'Stok', 'Batas Peringatan'];
+    const headers = ['ID', 'Kode/SKU', 'Nama Barang', 'Kategori', 'Satuan', 'HPP Modal', 'Harga Jual', 'Stok', 'Batas Peringatan', 'Memiliki Foto'];
     const rows = products.map((p) => [
       p.id,
-      p.barcode,
+      p.barcode || '-',
       `"${p.name.replace(/"/g, '""')}"`,
       p.category,
       p.unit || 'pcs',
@@ -383,6 +326,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       p.selling_price,
       p.stock_quantity,
       p.min_stock_alert,
+      p.image ? 'Ya' : 'Tidak',
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
@@ -408,10 +352,10 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
             Master Data & Inventaris
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-ink mt-1.5">
-            Katalog Produk & Harga Toko
+            Katalog Produk & Foto Barang
           </h1>
           <p className="text-sm text-ink-muted">
-            Kelola kode barcode, satuan unit, harga kulakan (HPP), harga jual ritel, serta ketersediaan stok
+            Kelola foto produk, satuan unit, harga modal (HPP), harga jual ritel, serta ketersediaan stok
           </p>
         </div>
 
@@ -446,7 +390,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari berdasarkan nama atau scan barcode produk..."
+              placeholder="Cari berdasarkan nama atau kategori barang..."
               className="w-full pl-11 pr-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-forest"
             />
           </div>
@@ -510,7 +454,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-cream-100 border-b border-cream-300 text-xs font-extrabold text-ink-muted uppercase tracking-wider">
-                <th className="py-4 px-6">Barcode</th>
+                <th className="py-4 px-4 text-center">Foto</th>
                 <th className="py-4 px-6">Nama Barang</th>
                 <th className="py-4 px-4">Kategori</th>
                 <th className="py-4 px-4 text-center">Satuan</th>
@@ -531,14 +475,31 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
 
                 return (
                   <tr key={p.id} className="hover:bg-cream-50/70 transition-colors">
-                    {/* Barcode */}
-                    <td className="py-4 px-6 font-mono text-xs font-semibold text-ink-muted">
-                      {p.barcode}
+                    {/* Foto Produk */}
+                    <td className="py-3 px-4 text-center">
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="w-12 h-12 rounded-xl object-cover border border-cream-300 shadow-sm mx-auto"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-cream-100 border border-cream-300 flex items-center justify-center text-ink-subtle mx-auto">
+                          <ImageIcon className="w-5 h-5 opacity-40" />
+                        </div>
+                      )}
                     </td>
 
                     {/* Name */}
                     <td className="py-4 px-6 font-bold text-ink">
-                      {p.name}
+                      <div>
+                        <span>{p.name}</span>
+                        {p.barcode && (
+                          <span className="block font-mono text-[11px] text-ink-muted font-normal mt-0.5">
+                            SKU: {p.barcode}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Category */}
@@ -630,7 +591,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                       <div>
                         <h3 className="text-lg font-black text-ink">Katalog Barang Masih Kosong & Siap Diisi</h3>
                         <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                          Sistem siap digunakan! Silakan daftarkan produk dagangan toko Anda melalui barcode scanner atau tombol di bawah ini.
+                          Sistem siap digunakan! Silakan daftarkan produk dagangan toko Anda dengan menambahkan foto produk dan rincian harga di bawah ini.
                         </p>
                       </div>
                       <button
@@ -674,38 +635,73 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
             </div>
 
             <form onSubmit={handleSaveProduct} className="mt-5 space-y-4">
-              {/* Barcode Input with Camera Button */}
+              {/* Product Photo Upload Area */}
               <div>
-                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1">
-                  Nomor Barcode (EAN-13 / GTIN Kemasan) *
+                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1.5">
+                  Foto / Gambar Produk
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    ref={barcodeInputRef}
-                    type="text"
-                    data-scanner-input="true"
-                    required
-                    value={formBarcode}
-                    onChange={(e) => setFormBarcode(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        productNameInputRef.current?.focus();
-                      }
-                    }}
-                    placeholder="Scan kemasan atau ketik barcode (cth: 899886620022)"
-                    className="flex-1 px-4 py-3 bg-cream-50 border-2 border-cream-300 rounded-2xl font-mono font-bold text-base text-ink focus:outline-none focus:ring-2 focus:ring-forest"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIsCameraOpen(true)}
-                    className="px-4 py-3 bg-forest hover:bg-forest-light text-white font-bold rounded-2xl flex items-center gap-1.5 text-xs shadow-sm active:scale-95 transition-all"
-                    title="Gunakan Kamera HP / Laptop"
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  className="hidden"
+                />
+
+                {formImage ? (
+                  <div className="flex items-center gap-4 p-3 bg-cream-50 rounded-2xl border-2 border-cream-300">
+                    <img
+                      src={formImage}
+                      alt="Preview"
+                      className="w-20 h-20 rounded-xl object-cover border border-cream-300 shadow-sm flex-shrink-0"
+                    />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-status-successText">
+                        <Check className="w-4 h-4" />
+                        <span>Foto Produk Terpasang</span>
+                      </div>
+                      <p className="text-[11px] text-ink-muted">
+                        Foto tersimpan secara lokal dan otomatis tampil di katalog kasir.
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3 py-1.5 bg-cream-200 hover:bg-cream-300 text-ink font-bold text-xs rounded-xl flex items-center gap-1 transition-colors"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-forest" />
+                          <span>Ganti Foto</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="px-3 py-1.5 bg-status-dangerBg hover:bg-status-dangerBg/80 text-status-dangerText font-bold text-xs rounded-xl transition-colors"
+                        >
+                          Hapus Foto
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed border-cream-300 hover:border-forest/60 bg-cream-50 hover:bg-cream-100 rounded-2xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 ${
+                      isProcessingImage ? 'opacity-60 pointer-events-none' : ''
+                    }`}
                   >
-                    <Camera className="w-4 h-4 text-amber" />
-                    <span>Scan</span>
-                  </button>
-                </div>
+                    <div className="w-12 h-12 rounded-2xl bg-amber/30 text-forest flex items-center justify-center">
+                      <ImagePlus className="w-6 h-6 stroke-[2.2]" />
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-sm text-ink">
+                        {isProcessingImage ? 'Mengompres Foto...' : 'Ambil Foto / Pilih Gambar Produk'}
+                      </p>
+                      <p className="text-[11px] text-ink-muted mt-0.5">
+                        Kamera HP langsung atau galeri file (JPG, PNG, WebP)
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Product Name */}
@@ -850,6 +846,20 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 </div>
               </div>
 
+              {/* SKU / Kode Barang (Opsional) */}
+              <div>
+                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1">
+                  Kode Barang / SKU Rak (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={formSku}
+                  onChange={(e) => setFormSku(e.target.value)}
+                  placeholder="Opsional - kosongkan jika ingin dibuatkan otomatis"
+                  className="w-full px-4 py-2.5 bg-cream-50 border border-cream-300 rounded-2xl font-mono text-xs text-ink focus:outline-none focus:ring-2 focus:ring-forest"
+                />
+              </div>
+
               {/* Action Buttons */}
               <div className="pt-4 flex gap-3">
                 <button
@@ -872,20 +882,6 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         </div>
       )}
 
-      {/* Camera Barcode Scanner for Product Form */}
-      <CameraScannerModal
-        isOpen={isCameraOpen}
-        onClose={() => setIsCameraOpen(false)}
-        onDetected={(code) => {
-          setFormBarcode(code);
-          addToast('success', 'Barcode Kamera Terbaca', `Barcode [${code}] berhasil dipindai.`);
-          setTimeout(() => {
-            productNameInputRef.current?.focus();
-          }, 150);
-        }}
-        title="Scan Barcode Kemasan untuk Produk"
-      />
-
       {/* Action Confirmation Modal for DELETING Product */}
       <ActionConfirmModal
         isOpen={isConfirmDeleteOpen}
@@ -901,7 +897,6 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           productToDelete
             ? [
                 { label: 'Nama Barang', value: productToDelete.name, highlight: true },
-                { label: 'Nomor Barcode', value: productToDelete.barcode },
                 { label: 'Kategori', value: productToDelete.category },
                 { label: 'Satuan Unit', value: productToDelete.unit || 'pcs' },
                 {
@@ -910,6 +905,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 },
                 { label: 'Modal Beli (HPP)', value: formatRupiah(productToDelete.cost_price) },
                 { label: 'Harga Jual Kasir', value: formatRupiah(productToDelete.selling_price) },
+                { label: 'Foto Produk', value: productToDelete.image ? 'Terpasang' : 'Tidak Ada' },
               ]
             : []
         }
@@ -927,7 +923,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         description="Periksa kembali rincian data produk berikut sebelum disimpan ke sistem kasir:"
         details={[
           { label: 'Nama Barang', value: formName, highlight: true },
-          { label: 'Nomor Barcode', value: formBarcode },
+          { label: 'Foto Produk', value: formImage ? 'Terpasang' : 'Tanpa Foto' },
           { label: 'Kategori', value: formCategory },
           { label: 'Satuan Unit', value: formUnit },
           { label: 'Modal Beli (HPP)', value: formatRupiah(formCostPrice) },

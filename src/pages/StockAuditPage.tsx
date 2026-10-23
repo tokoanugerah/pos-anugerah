@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Barcode,
-  Camera,
+  Search,
   CheckCircle2,
   AlertTriangle,
   History,
   RotateCcw,
   Check,
+  Package,
+  Boxes,
 } from 'lucide-react';
 import type { Product, StockAudit } from '../types';
 import { formatDateIndo, generateId } from '../utils/format';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
-import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db } from '../db';
-import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 interface StockAuditPageProps {
   products: Product[];
@@ -27,8 +26,7 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [physicalCountStr, setPhysicalCountStr] = useState<string>('0');
   const [auditNotes, setAuditNotes] = useState<string>('');
-  const [barcodeInput, setBarcodeInput] = useState<string>('');
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [auditHistory, setAuditHistory] = useState<StockAudit[]>([]);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -55,27 +53,16 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
     setFeedbackMsg(null);
   };
 
-  const handleBarcodeSearch = (code: string) => {
-    const clean = code.trim();
-    if (!clean) return;
-
-    const found = products.find((p) => p.barcode === clean || p.barcode.toLowerCase() === clean.toLowerCase());
-    if (found) {
-      playSuccessBeep();
-      handleSelectProduct(found);
-      setBarcodeInput('');
-    } else {
-      playErrorBeep();
-      setFeedbackMsg({ text: `Barcode [${clean}] tidak ditemukan di katalog produk!`, type: 'error' });
-    }
-  };
-
-  useBarcodeScanner({
-    onScan: (code) => {
-      handleBarcodeSearch(code);
-    },
-    enabled: !isCameraOpen,
-  });
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return products;
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        (p.barcode && p.barcode.toLowerCase().includes(q))
+    );
+  }, [products, searchQuery]);
 
   const physicalCount = Number(physicalCountStr) || 0;
 
@@ -137,18 +124,14 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
             Stok Opname Rak Toko
           </h1>
           <p className="text-sm text-ink-muted">
-            Hitung jumlah barang riil yang ada di etalase/rak toko dan selaraskan dengan catatan komputer kasir
+            Hitung jumlah fisik barang di etalase/rak toko dan selaraskan dengan catatan komputer kasir
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCameraOpen(true)}
-          className="px-5 py-3.5 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-sm transition-all shadow-elevated flex items-center gap-2 active:scale-95"
-        >
-          <Camera className="w-5 h-5 text-forest" />
-          <span>Kamera Scan Barcode Rak</span>
-        </button>
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-forest-surface text-forest rounded-2xl text-xs font-bold">
+          <Boxes className="w-4 h-4" />
+          <span>{products.length} Total Produk di Toko</span>
+        </div>
       </div>
 
       {feedbackMsg && (
@@ -170,59 +153,58 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
 
       {/* Main Audit Grid (Full Desktop Width) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Side: Scan & Audit Form (7 Columns) */}
+        {/* Left Side: Search & Audit Form (7 Columns) */}
         <div className="lg:col-span-7 space-y-5">
-          {/* Quick Scan Input */}
+          {/* Quick Search Input */}
           <div className="bg-card p-5 rounded-3xl shadow-card border border-cream-300">
             <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-2">
-              Pindai / Cari Barang yang Sedang Dihitung di Rak:
+              Cari Barang yang Sedang Dihitung di Rak:
             </label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Barcode className="w-6 h-6 text-forest absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={barcodeInput}
-                  onChange={(e) => setBarcodeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleBarcodeSearch(barcodeInput);
-                    }
-                  }}
-                  placeholder="Scan barcode fisik atau ketik kode..."
-                  className="w-full pl-12 pr-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-mono font-bold text-base text-ink focus:outline-none focus:ring-2 focus:ring-forest"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => handleBarcodeSearch(barcodeInput)}
-                className="px-5 py-3 bg-forest text-white font-bold rounded-2xl text-sm hover:bg-forest-light transition-colors"
-              >
-                Cari
-              </button>
+            <div className="relative">
+              <Search className="w-5 h-5 text-forest absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Ketik nama atau kategori barang..."
+                className="w-full pl-12 pr-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-bold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest"
+              />
             </div>
           </div>
 
           {/* Active Product Form */}
           {selectedProduct ? (
             <div className="bg-card p-6 rounded-3xl shadow-elevated border-2 border-forest/30 space-y-5 animate-in fade-in">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[11px] font-bold text-forest bg-forest-surface px-2.5 py-0.5 rounded-full uppercase">
-                    {selectedProduct.category}
-                  </span>
-                  <h3 className="text-xl font-extrabold text-ink mt-1">
-                    {selectedProduct.name}
-                  </h3>
-                  <p className="font-mono text-xs text-ink-muted mt-0.5">
-                    Barcode: {selectedProduct.barcode} • Satuan: <b>{selectedProduct.unit || 'pcs'}</b>
-                  </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {selectedProduct.image ? (
+                    <img
+                      src={selectedProduct.image}
+                      alt={selectedProduct.name}
+                      className="w-14 h-14 rounded-2xl object-cover border border-cream-300 shadow-sm flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-cream-100 border border-cream-300 flex items-center justify-center text-ink-subtle flex-shrink-0">
+                      <Package className="w-6 h-6 opacity-40" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-[11px] font-bold text-forest bg-forest-surface px-2.5 py-0.5 rounded-full uppercase">
+                      {selectedProduct.category}
+                    </span>
+                    <h3 className="text-lg sm:text-xl font-extrabold text-ink mt-0.5 truncate">
+                      {selectedProduct.name}
+                    </h3>
+                    <p className="text-xs text-ink-muted">
+                      Satuan: <b>{selectedProduct.unit || 'pcs'}</b>
+                    </p>
+                  </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedProduct(null)}
-                  className="text-xs text-ink-muted hover:text-ink bg-cream-100 px-3 py-1.5 rounded-xl"
+                  className="text-xs text-ink font-bold bg-cream-200 hover:bg-cream-300 px-3.5 py-2 rounded-xl flex-shrink-0 transition-colors"
                 >
                   Ganti Barang
                 </button>
@@ -232,7 +214,7 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
               <div className="grid grid-cols-3 gap-3">
                 {/* System Stock */}
                 <div className="p-4 bg-cream-100 rounded-2xl border border-cream-300 text-center">
-                  <p className="text-[11px] font-bold text-ink-muted uppercase">Stok di Komputer</p>
+                  <p className="text-[11px] font-bold text-ink-muted uppercase">Stok Komputer</p>
                   <p className="text-2xl sm:text-3xl font-mono font-black text-ink mt-1">
                     {selectedProduct.stock_quantity}
                   </p>
@@ -280,7 +262,7 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
                     {difference === 0
                       ? 'Cocok Sesuai'
                       : difference < 0
-                      ? 'Barang Kurang / Hilang'
+                      ? 'Barang Kurang'
                       : 'Barang Lebih'}
                   </p>
                 </div>
@@ -303,7 +285,7 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
 
                 <button
                   type="submit"
-                  className="w-full py-4 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-base shadow-elevated transition-all flex items-center justify-center gap-2"
+                  className="w-full py-4 bg-amber hover:bg-amber-hover text-forest font-black rounded-2xl text-base shadow-elevated transition-all flex items-center justify-center gap-2 active:scale-98"
                 >
                   <Check className="w-5 h-5 stroke-[3]" />
                   SESUAIKAN STOK KOMPUTER ({physicalCount} {selectedProduct.unit || 'pcs'})
@@ -314,28 +296,47 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
             /* Fast Selection List from Catalog */
             <div className="bg-card p-5 rounded-3xl shadow-card border border-cream-300 space-y-3">
               <h4 className="font-extrabold text-sm text-ink">
-                Atau Pilih Produk dari Rak yang Ingin Di-Audit:
+                Pilih Produk dari Rak untuk Mulai Audit:
               </h4>
               <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
-                {products.map((p) => (
+                {filteredProducts.map((p) => (
                   <div
                     key={p.id}
                     onClick={() => handleSelectProduct(p)}
-                    className="p-3 bg-cream-50 hover:bg-cream-100 rounded-2xl border border-cream-300 flex items-center justify-between cursor-pointer transition-colors"
+                    className="p-3 bg-cream-50 hover:bg-cream-100 rounded-2xl border border-cream-300 flex items-center justify-between cursor-pointer transition-colors gap-3"
                   >
-                    <div>
-                      <h5 className="font-bold text-ink text-sm">{p.name}</h5>
-                      <span className="font-mono text-xs text-ink-muted">
-                        Barcode: {p.barcode} • Kategori: {p.category}
-                      </span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="w-10 h-10 rounded-xl object-cover border border-cream-300 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-cream-200 border border-cream-300 flex items-center justify-center text-ink-subtle flex-shrink-0">
+                          <Package className="w-5 h-5 opacity-40" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <h5 className="font-bold text-ink text-sm truncate">{p.name}</h5>
+                        <span className="text-xs text-ink-muted">
+                          Kategori: {p.category}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex-shrink-0">
                       <span className="text-xs font-bold text-forest bg-forest-surface px-2.5 py-1 rounded-xl">
                         Stok: {p.stock_quantity} {p.unit || 'pcs'}
                       </span>
                     </div>
                   </div>
                 ))}
+
+                {filteredProducts.length === 0 && (
+                  <p className="py-6 text-center text-xs text-ink-muted font-medium">
+                    Tidak ditemukan barang dengan kata kunci "{searchQuery}"
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -396,14 +397,6 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Camera Barcode Scanner Modal for Shelf Audit */}
-      <CameraScannerModal
-        isOpen={isCameraOpen}
-        onClose={() => setIsCameraOpen(false)}
-        onDetected={(code) => handleBarcodeSearch(code)}
-        title="Audit Rak: Arahkan Kamera ke Barcode Produk"
-      />
     </div>
   );
 };

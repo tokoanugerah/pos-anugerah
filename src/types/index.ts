@@ -1,6 +1,6 @@
 export interface Product {
   id: string;
-  barcode: string;
+  barcode?: string;
   name: string;
   category: string;
   unit: string;             // Satuan unit: 'pcs', 'kg', 'liter', 'bungkus', 'botol', dll.
@@ -8,6 +8,7 @@ export interface Product {
   selling_price: number;    // Harga Jual
   stock_quantity: number;   // Stok Tersedia
   min_stock_alert: number;  // Batas Peringatan Stok Menipis
+  image?: string;           // Foto / Gambar Produk (Data URL base64 terkompresi)
   is_active: number;        // 1 = Aktif, 0 = Non-aktif
   created_at: string;
   updated_at: string;
@@ -59,7 +60,7 @@ export interface StockAudit {
   audit_date: string;
   product_id: string;
   product_name: string;
-  barcode: string;
+  barcode?: string;
   system_stock: number;
   physical_stock: number;
   difference: number;       // physical_stock - system_stock

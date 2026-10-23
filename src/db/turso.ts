@@ -5,7 +5,7 @@ export const TURSO_SCHEMA_SQL = `
 -- 1. Master Data Produk Anugerah Store
 CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
-    barcode TEXT UNIQUE NOT NULL,
+    barcode TEXT,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     unit TEXT DEFAULT 'pcs',
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS products (
     selling_price INTEGER NOT NULL,
     stock_quantity INTEGER NOT NULL DEFAULT 0,
     min_stock_alert INTEGER NOT NULL DEFAULT 5,
+    image TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -141,9 +142,23 @@ export async function syncLocalToTurso(): Promise<{ success: boolean; message: s
     // Batch upsert products
     for (const p of products) {
       await client.execute({
-        sql: `INSERT OR REPLACE INTO products (id, barcode, name, category, unit, cost_price, selling_price, stock_quantity, min_stock_alert, is_active, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [p.id, p.barcode, p.name, p.category, p.unit || 'pcs', p.cost_price, p.selling_price, p.stock_quantity, p.min_stock_alert, p.is_active, p.created_at, p.updated_at],
+        sql: `INSERT OR REPLACE INTO products (id, barcode, name, category, unit, cost_price, selling_price, stock_quantity, min_stock_alert, image, is_active, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          p.id,
+          p.barcode ?? null,
+          p.name,
+          p.category,
+          p.unit || 'pcs',
+          p.cost_price,
+          p.selling_price,
+          p.stock_quantity,
+          p.min_stock_alert,
+          p.image ?? null,
+          p.is_active,
+          p.created_at,
+          p.updated_at,
+        ],
       });
     }
 

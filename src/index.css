@@ -47,3 +47,28 @@
     background: #fff;
   }
 }
+
+/* Mobile Barcode Scanner Viewport Styling */
+#anugerah-barcode-reader {
+  width: 100% !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#anugerah-barcode-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 260px !important;
+  object-fit: cover !important;
+  border-radius: 1rem !important;
+}
+
+#anugerah-barcode-reader img {
+  display: none !important;
+}
+
+#anugerah-barcode-reader__scan_region {
+  border: none !important;
+}

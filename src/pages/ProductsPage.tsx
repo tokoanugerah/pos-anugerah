@@ -11,12 +11,14 @@ import {
   ImagePlus,
   Upload,
   Image as ImageIcon,
+  Sparkles,
 } from 'lucide-react';
 import type { Product } from '../types';
 import { formatRupiah, formatNumber, generateId } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
+import { AutoImageSearchModal } from '../components/AutoImageSearchModal';
 import { db, getProductCategories, clearAllStoreData } from '../db';
 import { compressProductImage } from '../utils/image';
 
@@ -33,6 +35,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAutoImageOpen, setIsAutoImageOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -637,9 +640,24 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
             <form onSubmit={handleSaveProduct} className="mt-5 space-y-4">
               {/* Product Photo Upload Area */}
               <div>
-                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1.5">
-                  Foto / Gambar Produk
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-ink-muted uppercase tracking-wider">
+                    Foto / Gambar Produk
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playKeyClick();
+                      setIsAutoImageOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber/20 hover:bg-amber text-forest border border-amber/60 rounded-xl text-xs font-black transition-all active:scale-95 shadow-xs"
+                    title="Cari gambar otomatis berdasarkan nama produk"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-forest" />
+                    <span>✨ Cari Gambar Otomatis</span>
+                  </button>
+                </div>
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -663,14 +681,25 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                       <p className="text-[11px] text-ink-muted">
                         Foto tersimpan secara lokal dan otomatis tampil di katalog kasir.
                       </p>
-                      <div className="flex gap-2 pt-1">
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playKeyClick();
+                            setIsAutoImageOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-amber hover:bg-amber-hover text-forest font-black text-xs rounded-xl flex items-center gap-1 transition-colors active:scale-95 shadow-xs"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Cari Ulang Otomatis</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
                           className="px-3 py-1.5 bg-cream-200 hover:bg-cream-300 text-ink font-bold text-xs rounded-xl flex items-center gap-1 transition-colors"
                         >
                           <Upload className="w-3.5 h-3.5 text-forest" />
-                          <span>Ganti Foto</span>
+                          <span>Ganti File/Foto HP</span>
                         </button>
                         <button
                           type="button"
@@ -683,32 +712,64 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed border-cream-300 hover:border-forest/60 bg-cream-50 hover:bg-cream-100 rounded-2xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 ${
-                      isProcessingImage ? 'opacity-60 pointer-events-none' : ''
-                    }`}
-                  >
+                  <div className="border-2 border-dashed border-cream-300 bg-cream-50 rounded-2xl p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-amber/30 text-forest flex items-center justify-center">
                       <ImagePlus className="w-6 h-6 stroke-[2.2]" />
                     </div>
                     <div>
                       <p className="font-extrabold text-sm text-ink">
-                        {isProcessingImage ? 'Mengompres Foto...' : 'Ambil Foto / Pilih Gambar Produk'}
+                        {isProcessingImage ? 'Mengompres Foto...' : 'Pasang Foto Produk'}
                       </p>
                       <p className="text-[11px] text-ink-muted mt-0.5">
-                        Kamera HP langsung atau galeri file (JPG, PNG, WebP)
+                        Pilih foto otomatis dari internet, kamera HP, galeri, atau paste (Ctrl+V)
                       </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playKeyClick();
+                          setIsAutoImageOpen(true);
+                        }}
+                        className="px-4 py-2 bg-amber hover:bg-amber-hover text-forest font-black rounded-xl text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                      >
+                        <Sparkles className="w-4 h-4 text-forest" />
+                        <span>✨ Cari Gambar Otomatis</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-cream-200 hover:bg-cream-300 text-ink font-bold rounded-xl text-xs flex items-center gap-1.5 active:scale-95 transition-all"
+                      >
+                        <Upload className="w-4 h-4 text-forest" />
+                        <span>Kamera HP / Upload File</span>
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Product Name */}
+              {/* Product Name with inline search helper */}
               <div>
-                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1">
-                  Nama Barang Lengkap *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block">
+                    Nama Barang Lengkap *
+                  </label>
+                  {formName.trim().length > 2 && !formImage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playKeyClick();
+                        setIsAutoImageOpen(true);
+                      }}
+                      className="text-[11px] font-bold text-forest hover:text-amber-dark flex items-center gap-1 transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber" />
+                      <span className="underline">Cari gambar untuk "{formName.slice(0, 18)}..."</span>
+                    </button>
+                  )}
+                </div>
                 <input
                   ref={productNameInputRef}
                   type="text"
@@ -933,6 +994,17 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         ]}
         confirmText="Ya, Simpan Perubahan"
         cancelText="Kembali Periksa"
+      />
+
+      {/* Auto Image Search Modal */}
+      <AutoImageSearchModal
+        isOpen={isAutoImageOpen}
+        onClose={() => setIsAutoImageOpen(false)}
+        productName={formName}
+        onSelectImage={(imageDataUrl) => {
+          setFormImage(imageDataUrl);
+          addToast('success', 'Foto Produk Terpasang', 'Foto berhasil dipilih dan dikompres untuk produk toko.');
+        }}
       />
 
       {/* Floating Feedback Toast Alerts */}

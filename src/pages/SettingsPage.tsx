@@ -28,7 +28,6 @@ import {
   getStoreSettings,
   saveStoreSettings,
   clearAllStoreData,
-  loadDemoData,
   db,
   DEFAULT_CATEGORIES,
   getProductCategories,
@@ -66,7 +65,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
   const [isConfirmResetCategoryOpen, setIsConfirmResetCategoryOpen] = useState(false);
-  const [isConfirmResetSeedOpen, setIsConfirmResetSeedOpen] = useState(false);
   const [isConfirmClearAllOpen, setIsConfirmClearAllOpen] = useState(false);
   const { canInstall, isInstalled, triggerInstall } = usePwaInstall();
 
@@ -337,27 +335,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
     } catch (err) {
       console.error(err);
       addToast('warning', 'Gagal Mengosongkan', 'Terjadi kesalahan sistem saat mengosongkan database.');
-    }
-  };
-
-  const handlePromptResetSeed = () => {
-    playKeyClick();
-    setIsConfirmResetSeedOpen(true);
-  };
-
-  const executeResetSeed = async () => {
-    try {
-      await loadDemoData();
-      playSuccessBeep();
-      setIsConfirmResetSeedOpen(false);
-      setSettings(getStoreSettings());
-      setCategories(getProductCategories());
-      setRestoreStats('Database berhasil dimuat ulang ke data contoh awal!');
-      addToast('success', 'Reset Demo Berhasil', 'Database toko telah dimuat ulang dengan data contoh awal.');
-      onRefreshAll();
-    } catch (err) {
-      console.error(err);
-      addToast('warning', 'Gagal Reset', 'Terjadi kesalahan saat memuat data contoh.');
     }
   };
 
@@ -879,15 +856,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
                 <Trash2 className="w-4 h-4 text-status-dangerText" />
                 <span>Kosongkan Seluruh Data (Mulai Baru)</span>
               </button>
-
-              <button
-                type="button"
-                onClick={handlePromptResetSeed}
-                className="text-xs text-ink-muted hover:text-forest hover:underline font-bold flex items-center justify-center gap-1.5 py-1"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Muat Data Contoh Simulasi (Demo)</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1097,29 +1065,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
           },
         ]}
         confirmText="Ya, Kosongkan & Mulai Baru"
-        cancelText="Batal"
-      />
-
-      {/* Confirmation Modal for RESETTING Seed to Demo */}
-      <ActionConfirmModal
-        isOpen={isConfirmResetSeedOpen}
-        onClose={() => setIsConfirmResetSeedOpen(false)}
-        onConfirm={executeResetSeed}
-        type="warning"
-        title="Muat Ulang Data Contoh Awal (Demo Reset)?"
-        description="Peringatan: Seluruh data produk dan riwayat transaksi kasir yang ada saat ini akan digantikan dengan data contoh awal."
-        details={[
-          {
-            label: 'Tindakan',
-            value: 'Reset Total Database Lokal',
-            highlight: true,
-          },
-          {
-            label: 'Dampak',
-            value: 'Data transaksi yang belum dicadangkan ke JSON akan hilang',
-          },
-        ]}
-        confirmText="Ya, Muat Ulang Data Contoh"
         cancelText="Batal"
       />
 

@@ -91,14 +91,10 @@ export function saveProductCategories(categories: string[]) {
   saveStoreSettings(settings);
 }
 
-// Basis Data Toko Awal (Bersih 100% Siap Diisi Produk Riil Toko)
-export const INITIAL_PRODUCTS: Product[] = [];
-export const INITIAL_SALES: { sale: Sale; items: SaleItem[] }[] = [];
-export const INITIAL_EXPENSES: Expense[] = [];
-
 /**
  * Inisialisasi basis data lokal Anugerah Store
- * Memastikan skema lokal siap dan konsisten tanpa menghapus data produk pengguna
+ * Memastikan skema lokal siap dan konsisten
+ * Tidak ada logika pembersih otomatis - semua data pengguna 100% aman dan permanen
  */
 export async function initializeDatabase() {
   const prods = await db.products.toArray();
@@ -112,7 +108,7 @@ export async function initializeDatabase() {
 }
 
 /**
- * Kosongkan seluruh data toko (Mulai dari Awal / Seperti Baru)
+ * Kosongkan seluruh data toko (Hanya dipanggil atas konfirmasi manual pengguna)
  */
 export async function clearAllStoreData() {
   await db.transaction(
@@ -128,21 +124,6 @@ export async function clearAllStoreData() {
     }
   );
 
-  // Simpan pengaturan standar bersih
+  // Simpan pengaturan standar
   saveStoreSettings(DEFAULT_SETTINGS);
 }
-
-/**
- * Muat data contoh simulasi (Opsional jika ingin mencoba demo)
- */
-export async function loadDemoData() {
-  await clearAllStoreData();
-  await db.products.bulkAdd(INITIAL_PRODUCTS);
-  for (const item of INITIAL_SALES) {
-    await db.sales.add(item.sale);
-    await db.sale_items.bulkAdd(item.items);
-  }
-  await db.expenses.bulkAdd(INITIAL_EXPENSES);
-}
-
-export const resetDatabaseToInitial = clearAllStoreData;

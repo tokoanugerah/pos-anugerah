@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   PackagePlus,
   Search,
@@ -19,7 +19,7 @@ import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { AutoImageSearchModal } from '../components/AutoImageSearchModal';
-import { db, getProductCategories, clearAllStoreData } from '../db';
+import { db, getProductCategories } from '../db';
 import { compressProductImage } from '../utils/image';
 
 interface ProductsPageProps {
@@ -59,24 +59,6 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   const handleDismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  // Otomatis bersihkan jika browser masih menyimpan data contoh tiruan awal
-  useEffect(() => {
-    const hasDummy = products.some(
-      (p) =>
-        p.id.startsWith('prod_') ||
-        p.barcode === '899999900101' ||
-        p.barcode === '899999900102' ||
-        p.name.toLowerCase().includes('bimoli') ||
-        p.name.toLowerCase().includes('rojolele')
-    );
-    if (hasDummy) {
-      console.log('Terdeteksi sisa data contoh di Katalog Produk, membersihkan...');
-      clearAllStoreData().then(() => {
-        onRefresh();
-      });
-    }
-  }, [products, onRefresh]);
 
   // Form State using Strings to eliminate sticky leading zero bug (024500)
   const [formImage, setFormImage] = useState<string>('');

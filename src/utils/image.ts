@@ -60,7 +60,25 @@ export async function compressProductImage(file: File | Blob, maxDimension = 480
  */
 export async function fetchAndCompressImageUrl(imageUrl: string, maxDimension = 480, quality = 0.8): Promise<string> {
   const cleanUrl = imageUrl.trim();
-  if (!cleanUrl) throw new Error('URL gambar kosong');
+  if (!cleanUrl) throw new Error('URL gambar kosong.');
+
+  // Deteksi jika pengguna menempel link halaman web belanja (bukan tautan file foto)
+  const isHtmlPage =
+    cleanUrl.includes('/shop/') ||
+    cleanUrl.includes('/product/') ||
+    cleanUrl.includes('/item/') ||
+    cleanUrl.includes('/p/') ||
+    cleanUrl.endsWith('.html') ||
+    cleanUrl.endsWith('.htm') ||
+    cleanUrl.endsWith('.php');
+
+  const hasImageExtension = Boolean(cleanUrl.match(/\.(jpe?g|png|webp|gif|svg)(\?.*)?$/i));
+
+  if (isHtmlPage && !hasImageExtension) {
+    throw new Error(
+      'Tautan yang Anda tempel adalah link halaman toko/website, bukan file foto. Silakan klik kanan foto produk di website tersebut, pilih "Salin Alamat Gambar" (Copy image address) atau pilih "Salin Gambar" (Copy image) lalu tekan Ctrl+V.'
+    );
+  }
 
   let blob: Blob | null = null;
   const proxiedUrl = `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=${maxDimension}&output=jpg`;
@@ -86,7 +104,9 @@ export async function fetchAndCompressImageUrl(imageUrl: string, maxDimension = 
   }
 
   if (!blob) {
-    throw new Error('Tidak dapat mengunduh gambar dari URL tersebut. Pastikan tautan gambar aktif dan dapat diakses publik.');
+    throw new Error(
+      'Tidak dapat mengunduh gambar dari tautan tersebut. Pastikan link file gambar dapat diakses publik, atau gunakan fitur klik kanan foto lalu "Salin Gambar" (Copy image) dan tekan Ctrl+V di sini.'
+    );
   }
 
   return compressProductImage(blob, maxDimension, quality);

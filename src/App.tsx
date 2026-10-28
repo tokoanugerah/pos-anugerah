@@ -7,7 +7,7 @@ import { ExpensesPage } from './pages/ExpensesPage';
 import { StockAuditPage } from './pages/StockAuditPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { initializeDatabase, clearAllStoreData, db } from './db';
+import { initializeDatabase, db } from './db';
 import type { Product } from './types';
 
 export function App() {
@@ -17,19 +17,7 @@ export function App() {
 
   const loadProducts = useCallback(async () => {
     try {
-      let prods = await db.products.toArray();
-      const hasDummy = prods.some(
-        (p) =>
-          p.id.startsWith('prod_') ||
-          p.barcode === '899999900101' ||
-          p.name.toLowerCase().includes('bimoli') ||
-          p.name.toLowerCase().includes('rojolele')
-      );
-      if (hasDummy) {
-        console.log('Terdeteksi data dummy awal di browser, membersihkan total...');
-        await clearAllStoreData();
-        prods = [];
-      }
+      const prods = await db.products.toArray();
       setProducts(prods);
     } catch (e) {
       console.error('Gagal memuat produk dari IndexedDB:', e);

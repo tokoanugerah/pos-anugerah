@@ -25,12 +25,22 @@ interface ImageSearchResult {
 const PRESET_GROCERY_PHOTOS = [
   {
     category: 'Sembako',
+    title: 'Gula Pasir Kuning / Gulaku',
+    url: 'https://images.unsplash.com/photo-1622484212850-eb596d769edc?w=400&q=80',
+  },
+  {
+    category: 'Sembako',
+    title: 'Gula Pasir Putih Kristal',
+    url: 'https://images.unsplash.com/photo-1587735243615-c03f25aaff15?w=400&q=80',
+  },
+  {
+    category: 'Sembako',
     title: 'Minyak Goreng Botol',
     url: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&q=80',
   },
   {
     category: 'Sembako',
-    title: 'Beras Putih',
+    title: 'Beras Putih Pulen',
     url: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&q=80',
   },
   {
@@ -40,12 +50,7 @@ const PRESET_GROCERY_PHOTOS = [
   },
   {
     category: 'Sembako',
-    title: 'Gula Pasir Kristal',
-    url: 'https://images.unsplash.com/photo-1622484212850-eb596d769edc?w=400&q=80',
-  },
-  {
-    category: 'Sembako',
-    title: 'Tepung Terigu',
+    title: 'Tepung Terigu Segitiga',
     url: 'https://images.unsplash.com/photo-1627485937980-221c88ac04f9?w=400&q=80',
   },
   {
@@ -55,7 +60,7 @@ const PRESET_GROCERY_PHOTOS = [
   },
   {
     category: 'Minuman',
-    title: 'Kopi Bubuk / Biji',
+    title: 'Kopi Bubuk Hitam',
     url: 'https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=400&q=80',
   },
   {
@@ -70,7 +75,7 @@ const PRESET_GROCERY_PHOTOS = [
   },
   {
     category: 'Makanan',
-    title: 'Mie Instan / Ramen',
+    title: 'Mie Instan Goreng',
     url: 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&q=80',
   },
   {
@@ -85,12 +90,12 @@ const PRESET_GROCERY_PHOTOS = [
   },
   {
     category: 'Bumbu',
-    title: 'Rempah & Bumbu Dapur',
+    title: 'Kecap & Bumbu Dapur',
     url: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&q=80',
   },
   {
     category: 'Kebersihan',
-    title: 'Sabun & Deterjen',
+    title: 'Sabun Cuci Piring',
     url: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?w=400&q=80',
   },
 ];
@@ -291,10 +296,47 @@ export const AutoImageSearchModal: React.FC<AutoImageSearchModalProps> = ({
       playSuccessBeep();
       onSelectImage(compressedDataUrl);
       onClose();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Gagal mengunduh gambar:', err);
       playErrorBeep();
-      setErrorMsg('Gagal mengunduh atau mengompres gambar ini. Silakan coba gambar lainnya.');
+      const msg = err instanceof Error ? err.message : 'Gagal mengunduh atau mengompres gambar ini.';
+      setErrorMsg(msg);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Tempel langsung dari clipboard sistem jika didukung
+  const handleClipboardRead = async () => {
+    try {
+      if (!navigator.clipboard?.read) {
+        setErrorMsg('Silakan gunakan tombol keyboard Ctrl + V untuk menempelkan gambar yang sudah Anda salin.');
+        return;
+      }
+      setIsDownloading(true);
+      setErrorMsg(null);
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const compressed = await compressProductImage(blob);
+          playSuccessBeep();
+          onSelectImage(compressed);
+          onClose();
+          return;
+        }
+      }
+      // Jika teks clipboard berupa URL
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim().startsWith('http')) {
+        await handleApplyImage(text.trim());
+        return;
+      }
+      setErrorMsg('Tidak ada gambar di clipboard. Klik kanan gambar di web lalu pilih "Salin Gambar" (Copy Image).');
+    } catch (err) {
+      console.warn('Gagal membaca clipboard:', err);
+      setErrorMsg('Izin clipboard tidak tersedia. Cukup klik area ini lalu tekan Ctrl + V pada keyboard.');
     } finally {
       setIsDownloading(false);
     }
@@ -480,7 +522,7 @@ export const AutoImageSearchModal: React.FC<AutoImageSearchModalProps> = ({
               {/* Paste URL Box */}
               <div className="pt-2 border-t border-cream-200 space-y-2">
                 <label className="text-xs font-bold text-ink-muted block">
-                  Tempel / Paste URL Gambar dari Google atau Web:
+                  Tempel / Paste URL File Gambar (.jpg, .png, .webp):
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -500,20 +542,35 @@ export const AutoImageSearchModal: React.FC<AutoImageSearchModalProps> = ({
                     <span>Pasang Foto</span>
                   </button>
                 </div>
+                <p className="text-[11px] text-ink-muted">
+                  *Catatan: Pastikan tautan yang ditempel adalah file foto langsung (bukan link halaman toko seperti tokonya.com/product/...).
+                </p>
               </div>
             </div>
 
-            {/* Clipboard Paste Hint */}
-            <div className="p-4 bg-amber/15 rounded-2xl border border-amber/40 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber text-forest flex items-center justify-center flex-shrink-0 mt-0.5">
+            {/* Clipboard Paste Hint & Button */}
+            <div className="p-4 bg-amber/15 rounded-2xl border border-amber/40 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber text-forest flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <ClipboardPaste className="w-4 h-4" />
+                </div>
+                <div className="text-xs text-ink space-y-1">
+                  <p className="font-extrabold text-forest">Cara Paling Mudah & Cepat (Salin Gambar / Ctrl+V):</p>
+                  <p className="text-ink-muted leading-relaxed">
+                    Di Google Images / website apa saja, cukup <b>klik kanan pada foto produk</b> lalu pilih <b>"Salin Gambar" (Copy Image)</b>. Kembali ke sini dan tekan tombol di bawah ini atau tekan <b>Ctrl + V</b> di keyboard!
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClipboardRead}
+                disabled={isDownloading}
+                className="w-full py-2.5 px-4 bg-amber hover:bg-amber-hover text-forest font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98"
+              >
                 <ClipboardPaste className="w-4 h-4" />
-              </div>
-              <div className="text-xs text-ink space-y-1">
-                <p className="font-extrabold text-forest">Cara Super Cepat (Salin Gambar / Ctrl+V):</p>
-                <p className="text-ink-muted leading-relaxed">
-                  Di Google Images / WhatsApp / Web, cukup <b>klik kanan gambar</b> lalu pilih <b>"Salin Gambar" (Copy Image)</b>. Kembali ke layar ini dan tekan <b>Ctrl + V</b>, foto akan langsung terpasang otomatis!
-                </p>
-              </div>
+                <span>📋 Tempel Gambar dari Clipboard Sekarang</span>
+              </button>
             </div>
           </div>
         )}

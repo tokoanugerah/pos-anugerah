@@ -126,6 +126,24 @@ export async function ensureTursoSchema(): Promise<void> {
     for (const sql of statements) {
       await client.execute(sql);
     }
+
+    // Defensive migrations: pastikan kolom baru ada jika tabel dibuat pada versi lama
+    try {
+      await client.execute('ALTER TABLE products ADD COLUMN image TEXT;');
+    } catch {
+      // image sudah ada
+    }
+    try {
+      await client.execute('ALTER TABLE stock_audits ADD COLUMN product_name TEXT;');
+    } catch {
+      // product_name sudah ada
+    }
+    try {
+      await client.execute('ALTER TABLE stock_audits ADD COLUMN barcode TEXT;');
+    } catch {
+      // barcode sudah ada
+    }
+
     schemaEnsured = true;
   } catch (err) {
     console.warn('Gagal memverifikasi skema Turso:', err);
@@ -155,8 +173,8 @@ export async function testTursoConnection(): Promise<{ success: boolean; message
 /**
  * Simpan atau perbarui 1 produk langsung ke Turso di background
  */
-export async function syncProductToTurso(product: Product): Promise<void> {
-  if (!isTursoConfigured()) return;
+export async function syncProductToTurso(product: Product): Promise<{ success: boolean; message?: string }> {
+  if (!isTursoConfigured()) return { success: false, message: 'Turso tidak dikonfigurasi' };
   try {
     await ensureTursoSchema();
     const client = getTursoClient();
@@ -181,8 +199,11 @@ export async function syncProductToTurso(product: Product): Promise<void> {
     });
     recordLastSync();
     console.info(`[Turso Cloud] Produk "${product.name}" berhasil disinkronkan ke remote database.`);
+    return { success: true };
   } catch (err) {
-    console.warn('[Turso Cloud] Gagal menyinkronkan produk ke Turso:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Turso Cloud] Gagal menyinkronkan produk ke Turso:', err);
+    return { success: false, message: msg };
   }
 }
 
@@ -206,8 +227,8 @@ export async function deleteProductFromTurso(productId: string): Promise<void> {
 /**
  * Simpan transaksi penjualan + rincian item ke Turso di background
  */
-export async function syncSaleToTurso(sale: Sale, saleItems: SaleItem[]): Promise<void> {
-  if (!isTursoConfigured()) return;
+export async function syncSaleToTurso(sale: Sale, saleItems: SaleItem[]): Promise<{ success: boolean; message?: string }> {
+  if (!isTursoConfigured()) return { success: false, message: 'Turso tidak dikonfigurasi' };
   try {
     await ensureTursoSchema();
     const client = getTursoClient();
@@ -260,8 +281,11 @@ export async function syncSaleToTurso(sale: Sale, saleItems: SaleItem[]): Promis
 
     recordLastSync();
     console.info(`[Turso Cloud] Transaksi #${sale.receipt_number} berhasil dicatat di Turso.`);
+    return { success: true };
   } catch (err) {
-    console.warn('[Turso Cloud] Gagal mencatat transaksi ke Turso:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Turso Cloud] Gagal mencatat transaksi ke Turso:', err);
+    return { success: false, message: msg };
   }
 }
 
@@ -618,6 +642,49 @@ export async function pullTursoToLocal(): Promise<{
       success: false,
       message: `Gagal mengunduh dari Turso: ${msg}`,
       counts: {},
+    };
+  }
+}
+
+/**
+ * SINKRONISASI DUA ARAH (BIDIRECTIONAL SYNC):
+ * 1. Menarik data terbaru dari Turso Cloud ke Dexie lokal.
+ * 2. Mengunggah data lokal yang belum ada di Turso ke cloud.
+ */
+export async function syncBidirectional(): Promise<{
+  success: boolean;
+  message: string;
+  pulled: Record<string, number>;
+  pushed: Record<string, number>;
+}> {
+  if (!isTursoConfigured()) {
+    return {
+      success: false,
+      message: 'Kredensial database Turso belum disetel di .env',
+      pulled: {},
+      pushed: {},
+    };
+  }
+
+  try {
+    // 1. Tarik dari Cloud ke Dexie lokal
+    const pullRes = await pullTursoToLocal();
+    // 2. Dorong kembali data lokal (agar data yang dibuat saat offline masuk ke Cloud)
+    const pushRes = await syncLocalToTurso();
+
+    return {
+      success: pullRes.success && pushRes.success,
+      message: 'Sinkronisasi dua arah dengan Cloud Turso berhasil selesai.',
+      pulled: pullRes.counts,
+      pushed: pushRes.counts,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Sinkronisasi dua arah gagal: ${msg}`,
+      pulled: {},
+      pushed: {},
     };
   }
 }

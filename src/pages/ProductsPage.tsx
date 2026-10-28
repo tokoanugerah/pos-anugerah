@@ -235,7 +235,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           updated_at: nowIso,
         };
         await db.products.update(editingProduct.id, updatedProduct);
-        syncProductToTurso(updatedProduct).catch((err) => console.warn('Background Turso sync failed:', err));
+        const cloudRes = await syncProductToTurso(updatedProduct);
 
         playSuccessBeep();
         setIsConfirmEditOpen(false);
@@ -243,7 +243,9 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         addToast(
           'success',
           'Perubahan Produk Disimpan',
-          `Data produk "${formName}" berhasil diperbarui di katalog toko & cloud database.`
+          cloudRes.success
+            ? `Data produk "${formName}" berhasil diperbarui di katalog toko & cloud database.`
+            : `Data produk "${formName}" berhasil disimpan di perangkat lokal.`
         );
       } else {
         const newProduct: Product = {
@@ -262,14 +264,16 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           updated_at: nowIso,
         };
         await db.products.add(newProduct);
-        syncProductToTurso(newProduct).catch((err) => console.warn('Background Turso sync failed:', err));
+        const cloudRes = await syncProductToTurso(newProduct);
 
         playSuccessBeep();
         setIsModalOpen(false);
         addToast(
           'success',
           'Produk Berhasil Ditambahkan',
-          `"${formName}" telah terdaftar ke dalam stok toko & cloud database.`
+          cloudRes.success
+            ? `"${formName}" telah terdaftar ke dalam stok toko & cloud database.`
+            : `"${formName}" telah tersimpan di sistem lokal (akan disinkronkan saat terhubung).`
         );
       }
 

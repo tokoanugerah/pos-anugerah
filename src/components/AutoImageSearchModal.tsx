@@ -134,15 +134,14 @@ export const AutoImageSearchModal: React.FC<AutoImageSearchModalProps> = ({
     const found: ImageSearchResult[] = [];
 
     try {
-      // 1. Coba Open Food Facts via allorigins proxy / direct
+      // 1. Coba Open Food Facts API publik langsung (mendukung CORS publik resmi)
       try {
-        const targetUrl = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(q)}&page_size=8`;
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        const res = await fetch(proxyUrl);
+        const targetUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8`;
+        const res = await fetch(targetUrl);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.hits)) {
-            data.hits.forEach((item: { code?: string; product_name?: string; image_front_url?: string; image_url?: string }, idx: number) => {
+          if (Array.isArray(data.products)) {
+            data.products.forEach((item: { code?: string; product_name?: string; image_front_url?: string; image_url?: string }, idx: number) => {
               const img = item.image_front_url || item.image_url;
               if (img && item.product_name) {
                 found.push({

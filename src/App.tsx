@@ -8,7 +8,7 @@ import { StockAuditPage } from './pages/StockAuditPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { initializeDatabase, db } from './db';
-import { isTursoConfigured, pullTursoToLocal, syncLocalToTurso } from './db/turso';
+import { isTursoConfigured, syncBidirectional } from './db/turso';
 import type { Product } from './types';
 
 export function App() {
@@ -28,23 +28,25 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // 1. Minta izin penyimpanan permanen ke browser (mencegah eviction/pembersihan otomatis)
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then((persisted) => {
+        if (persisted) {
+          console.info('[Storage] Penyimpanan permanen aktif: Data toko aman dari pembersihan peramban.');
+        }
+      }).catch(console.warn);
+    }
+
     const init = async () => {
       await initializeDatabase();
       await loadProducts();
 
-      // Sinkronisasi otomatis dengan Cloud Turso
+      // Sinkronisasi dua arah otomatis dengan Cloud Turso
       try {
         if (navigator.onLine && isTursoConfigured()) {
-          const localCount = await db.products.count();
-          if (localCount === 0) {
-            // Jika perangkat baru atau data lokal belum ada, tarik dari Turso Cloud
-            const pullRes = await pullTursoToLocal();
-            if (pullRes.success && (pullRes.counts.produk ?? 0) > 0) {
-              await loadProducts();
-            }
-          } else {
-            // Jika sudah ada produk lokal, pastikan tersinkronisasi ke Cloud di background
-            syncLocalToTurso().catch((e) => console.warn('Background initial Turso sync notice:', e));
+          const syncRes = await syncBidirectional();
+          if (syncRes.success) {
+            await loadProducts();
           }
         }
       } catch (syncErr) {

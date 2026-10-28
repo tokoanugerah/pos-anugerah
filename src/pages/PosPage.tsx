@@ -245,8 +245,8 @@ export const PosPage: React.FC<PosPageProps> = ({
         }
       }
 
-      // Sinkronisasi otomatis ke remote database Turso Cloud di background
-      syncSaleToTurso(sale, saleItems).catch((err) => console.warn('Background Turso sale sync failed:', err));
+      // Sinkronisasi otomatis ke remote database Turso Cloud
+      await syncSaleToTurso(sale, saleItems);
 
       setCart([]);
       setIsPaymentOpen(false);

@@ -13,6 +13,7 @@ import type { Product, StockAudit } from '../types';
 import { formatDateIndo, generateId } from '../utils/format';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
 import { db } from '../db';
+import { syncStockAuditToTurso } from '../db/turso';
 
 interface StockAuditPageProps {
   products: Product[];
@@ -93,6 +94,8 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
         stock_quantity: physicalCount,
         updated_at: nowIso,
       });
+
+      syncStockAuditToTurso(auditEntry).catch((err) => console.warn('Background Turso stock audit sync failed:', err));
 
       playSuccessBeep();
       setFeedbackMsg({

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download,
   Upload,
@@ -15,6 +15,13 @@ import {
   RotateCcw,
   Laptop,
   Smartphone,
+  CloudUpload,
+  CloudDownload,
+  Database,
+  Wifi,
+  WifiOff,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import {
@@ -27,6 +34,14 @@ import {
   getProductCategories,
   saveProductCategories,
 } from '../db';
+import {
+  syncLocalToTurso,
+  pullTursoToLocal,
+  testTursoConnection,
+  getTursoCloudStats,
+  getLastSyncTime,
+  isTursoConfigured,
+} from '../db/turso';
 import type { StoreSettings } from '../types';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
 import { formatDateIndo, generateId } from '../utils/format';
@@ -68,6 +83,145 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Turso Cloud Database States
+  const [tursoStatus, setTursoStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unconfigured'>('checking');
+  const [tursoStats, setTursoStats] = useState<{ products: number; sales: number; expenses: number } | null>(null);
+  const [localStats, setLocalStats] = useState<{ products: number; sales: number; expenses: number } | null>(null);
+  const [isTursoSyncing, setIsTursoSyncing] = useState(false);
+  const [isTursoPulling, setIsTursoPulling] = useState(false);
+  const [lastSyncText, setLastSyncText] = useState<string | null>(() => {
+    const ts = getLastSyncTime();
+    return ts ? formatDateIndo(ts) : null;
+  });
+
+  const refreshTursoInfo = useCallback(async () => {
+    if (!isTursoConfigured()) {
+      setTursoStatus('unconfigured');
+      return;
+    }
+    setTursoStatus('checking');
+    try {
+      const [conn, stats, prodCount, saleCount, expCount] = await Promise.all([
+        testTursoConnection(),
+        getTursoCloudStats(),
+        db.products.count(),
+        db.sales.count(),
+        db.expenses.count(),
+      ]);
+      setTursoStatus(conn.success ? 'connected' : 'disconnected');
+      if (stats.connected) {
+        setTursoStats({
+          products: stats.counts.products,
+          sales: stats.counts.sales,
+          expenses: stats.counts.expenses,
+        });
+      }
+      setLocalStats({
+        products: prodCount,
+        sales: saleCount,
+        expenses: expCount,
+      });
+      const ts = getLastSyncTime();
+      if (ts) setLastSyncText(formatDateIndo(ts));
+    } catch {
+      setTursoStatus('disconnected');
+    }
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    (async () => {
+      if (!isTursoConfigured()) {
+        if (!isCancelled) setTursoStatus('unconfigured');
+        return;
+      }
+      try {
+        const [conn, stats, prodCount, saleCount, expCount] = await Promise.all([
+          testTursoConnection(),
+          getTursoCloudStats(),
+          db.products.count(),
+          db.sales.count(),
+          db.expenses.count(),
+        ]);
+        if (isCancelled) return;
+        setTursoStatus(conn.success ? 'connected' : 'disconnected');
+        if (stats.connected) {
+          setTursoStats({
+            products: stats.counts.products,
+            sales: stats.counts.sales,
+            expenses: stats.counts.expenses,
+          });
+        }
+        setLocalStats({
+          products: prodCount,
+          sales: saleCount,
+          expenses: expCount,
+        });
+        const ts = getLastSyncTime();
+        if (ts) setLastSyncText(formatDateIndo(ts));
+      } catch {
+        if (!isCancelled) setTursoStatus('disconnected');
+      }
+    })();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const handlePushToTurso = async () => {
+    setIsTursoSyncing(true);
+    playKeyClick();
+    try {
+      const res = await syncLocalToTurso();
+      if (res.success) {
+        playSuccessBeep();
+        addToast(
+          'success',
+          'Sinkronisasi Cloud Berhasil',
+          `${res.counts.produk ?? 0} produk dan ${res.counts.transaksi ?? 0} transaksi berhasil dikirim ke Turso Cloud.`
+        );
+        await refreshTursoInfo();
+        onRefreshAll();
+      } else {
+        playErrorBeep();
+        addToast('warning', 'Sinkronisasi Terkendala', res.message);
+      }
+    } catch (err: unknown) {
+      playErrorBeep();
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast('warning', 'Gagal Sinkronisasi', msg);
+    } finally {
+      setIsTursoSyncing(false);
+    }
+  };
+
+  const handlePullFromTurso = async () => {
+    setIsTursoPulling(true);
+    playKeyClick();
+    try {
+      const res = await pullTursoToLocal();
+      if (res.success) {
+        playSuccessBeep();
+        addToast(
+          'success',
+          'Data Cloud Berhasil Diunduh',
+          `${res.counts.produk ?? 0} produk & ${res.counts.transaksi ?? 0} transaksi berhasil ditarik ke sistem perangkat ini.`
+        );
+        await refreshTursoInfo();
+        onRefreshAll();
+      } else {
+        playErrorBeep();
+        addToast('warning', 'Gagal Mengunduh', res.message);
+      }
+    } catch (err: unknown) {
+      playErrorBeep();
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast('warning', 'Gagal Mengunduh', msg);
+    } finally {
+      setIsTursoPulling(false);
+    }
+  };
 
   const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
     const id = generateId('toast');
@@ -497,6 +651,162 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshAll }) => {
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset Standar</span>
+              </button>
+            </div>
+          </div>
+
+          {/* DATABASE CLOUD TURSO LIBSQL */}
+          <div className="bg-card p-6 sm:p-8 rounded-3xl shadow-card border border-cream-300 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-cream-200 gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-forest-surface flex items-center justify-center text-forest">
+                  <Database className="w-5 h-5 text-forest" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-lg text-ink flex items-center gap-2">
+                    Database Cloud Turso (libSQL)
+                    <span className="text-[10px] uppercase tracking-wider font-black px-2 py-0.5 rounded-md bg-amber/20 text-forest border border-amber/30">
+                      Real-time Sync
+                    </span>
+                  </h3>
+                  <p className="text-xs text-ink-muted">Sinkronisasi otomatis antar-perangkat & cadangan cloud</p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                {tursoStatus === 'checking' && (
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-amber/10 text-amber-900 border border-amber/30 flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />
+                    Memeriksa Koneksi...
+                  </span>
+                )}
+                {tursoStatus === 'connected' && (
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-status-successBg text-status-successText flex items-center gap-1.5">
+                    <Wifi className="w-3.5 h-3.5" />
+                    Terhubung ke Cloud Turso
+                  </span>
+                )}
+                {tursoStatus === 'disconnected' && (
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-status-dangerBg text-status-dangerText flex items-center gap-1.5">
+                    <WifiOff className="w-3.5 h-3.5" />
+                    Koneksi Cloud Terputus
+                  </span>
+                )}
+                {tursoStatus === 'unconfigured' && (
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-cream-200 text-ink-muted flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Kredensial Belum Terpasang
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={refreshTursoInfo}
+                  className="p-1.5 rounded-xl text-ink-muted hover:text-forest hover:bg-cream-100 transition-colors"
+                  title="Periksa Ulang Koneksi"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Information Box */}
+            <div className="p-4 bg-cream-50 rounded-2xl border border-cream-200 text-xs text-ink-muted leading-relaxed space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="font-semibold text-ink">
+                  Endpoint Server: <code className="text-[11px] font-mono text-forest bg-forest-surface px-1.5 py-0.5 rounded">pos-anugerah-tokoanugerah.aws-ap-northeast-1.turso.io</code>
+                </span>
+                {lastSyncText && (
+                  <span className="text-[11px] text-forest font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    Terakhir Sinkron: {lastSyncText}
+                  </span>
+                )}
+              </div>
+              <p>
+                • <b>Sinkronisasi Otomatis Aktif:</b> Setiap kali Anda menambah/mengubah produk atau kasir menyelesaikan transaksi nota, data langsung tercatat ke database lokal dan secara otomatis dikirim ke remote Turso Cloud di latar belakang.
+              </p>
+              <p>
+                • <b>Multi-Perangkat (Laptop & HP):</b> Anda dapat menggunakan sistem di komputer kasir toko dan di HP secara bersamaan. Gunakan tombol "Tarik Data dari Cloud" pada HP/perangkat baru untuk menyalin seluruh data produk dan riwayat penjualan.
+              </p>
+            </div>
+
+            {/* Comparison Counters: Local vs Cloud */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-canvas p-3.5 rounded-2xl border border-cream-300 text-center">
+                <span className="text-[11px] font-bold text-ink-muted block uppercase tracking-wider">Produk</span>
+                <div className="mt-1 flex items-baseline justify-center gap-1.5">
+                  <span className="text-lg font-black text-forest">{localStats?.products ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">lokal</span>
+                  <span className="text-xs text-ink-subtle">/</span>
+                  <span className="text-lg font-black text-amber-700">{tursoStats?.products ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">cloud</span>
+                </div>
+              </div>
+
+              <div className="bg-canvas p-3.5 rounded-2xl border border-cream-300 text-center">
+                <span className="text-[11px] font-bold text-ink-muted block uppercase tracking-wider">Transaksi</span>
+                <div className="mt-1 flex items-baseline justify-center gap-1.5">
+                  <span className="text-lg font-black text-forest">{localStats?.sales ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">lokal</span>
+                  <span className="text-xs text-ink-subtle">/</span>
+                  <span className="text-lg font-black text-amber-700">{tursoStats?.sales ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">cloud</span>
+                </div>
+              </div>
+
+              <div className="bg-canvas p-3.5 rounded-2xl border border-cream-300 text-center">
+                <span className="text-[11px] font-bold text-ink-muted block uppercase tracking-wider">Pengeluaran</span>
+                <div className="mt-1 flex items-baseline justify-center gap-1.5">
+                  <span className="text-lg font-black text-forest">{localStats?.expenses ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">lokal</span>
+                  <span className="text-xs text-ink-subtle">/</span>
+                  <span className="text-lg font-black text-amber-700">{tursoStats?.expenses ?? 0}</span>
+                  <span className="text-[10px] text-ink-subtle">cloud</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* TOMBOL PUSH KE CLOUD */}
+              <button
+                type="button"
+                onClick={handlePushToTurso}
+                disabled={isTursoSyncing || isTursoPulling}
+                className="py-3.5 px-5 bg-forest hover:bg-forest-light disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm shadow-elevated flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+              >
+                {isTursoSyncing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 text-amber animate-spin" />
+                    <span>Mengirim Data ke Cloud...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudUpload className="w-5 h-5 text-amber" />
+                    <span>Sinkronkan Sekarang (Kirim ke Cloud)</span>
+                  </>
+                )}
+              </button>
+
+              {/* TOMBOL TARIK DARI CLOUD */}
+              <button
+                type="button"
+                onClick={handlePullFromTurso}
+                disabled={isTursoSyncing || isTursoPulling}
+                className="py-3.5 px-5 bg-amber hover:bg-amber-hover disabled:opacity-50 text-forest font-black rounded-2xl text-sm shadow-elevated flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+              >
+                {isTursoPulling ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Mengunduh dari Cloud...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudDownload className="w-5 h-5 stroke-[2.5]" />
+                    <span>Tarik Data dari Cloud (Download)</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

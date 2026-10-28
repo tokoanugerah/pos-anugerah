@@ -21,6 +21,7 @@ import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { AutoImageSearchModal } from '../components/AutoImageSearchModal';
 import { db, getProductCategories } from '../db';
 import { compressProductImage } from '../utils/image';
+import { syncProductToTurso, deleteProductFromTurso } from '../db/turso';
 
 interface ProductsPageProps {
   products: Product[];
@@ -220,18 +221,21 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       const codeToUse = formSku.trim() || (editingProduct?.barcode ?? generateId('sku'));
 
       if (editingProduct) {
-        await db.products.update(editingProduct.id, {
+        const updatedProduct: Product = {
+          ...editingProduct,
           barcode: codeToUse,
           name: formName.trim(),
           category: formCategory,
-          unit: formUnit.trim() || 'pcs',
+          unit: (formUnit.trim() || 'pcs') as Product['unit'],
           cost_price: formCostPrice,
           selling_price: formSellingPrice,
           stock_quantity: formStockQuantity,
           min_stock_alert: formMinStockAlert,
           image: formImage || undefined,
           updated_at: nowIso,
-        });
+        };
+        await db.products.update(editingProduct.id, updatedProduct);
+        syncProductToTurso(updatedProduct).catch((err) => console.warn('Background Turso sync failed:', err));
 
         playSuccessBeep();
         setIsConfirmEditOpen(false);
@@ -239,7 +243,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         addToast(
           'success',
           'Perubahan Produk Disimpan',
-          `Data produk "${formName}" berhasil diperbarui di katalog toko.`
+          `Data produk "${formName}" berhasil diperbarui di katalog toko & cloud database.`
         );
       } else {
         const newProduct: Product = {
@@ -247,7 +251,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           barcode: codeToUse,
           name: formName.trim(),
           category: formCategory,
-          unit: formUnit.trim() || 'pcs',
+          unit: (formUnit.trim() || 'pcs') as Product['unit'],
           cost_price: formCostPrice,
           selling_price: formSellingPrice,
           stock_quantity: formStockQuantity,
@@ -258,13 +262,14 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           updated_at: nowIso,
         };
         await db.products.add(newProduct);
+        syncProductToTurso(newProduct).catch((err) => console.warn('Background Turso sync failed:', err));
 
         playSuccessBeep();
         setIsModalOpen(false);
         addToast(
           'success',
           'Produk Berhasil Ditambahkan',
-          `"${formName}" telah terdaftar ke dalam stok toko.`
+          `"${formName}" telah terdaftar ke dalam stok toko & cloud database.`
         );
       }
 
@@ -286,12 +291,13 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     if (!productToDelete) return;
     try {
       await db.products.delete(productToDelete.id);
+      deleteProductFromTurso(productToDelete.id).catch((err) => console.warn('Background Turso delete failed:', err));
       playKeyClick();
       setIsConfirmDeleteOpen(false);
       addToast(
         'delete',
         'Produk Telah Dihapus',
-        `"${productToDelete.name}" telah dihapus dari sistem toko.`
+        `"${productToDelete.name}" telah dihapus dari sistem toko & cloud database.`
       );
       setProductToDelete(null);
       onRefresh();

@@ -98,31 +98,12 @@ export const INITIAL_EXPENSES: Expense[] = [];
 
 /**
  * Inisialisasi basis data lokal Anugerah Store
- * Dibuat bersih (kosong) dan siap untuk diisi produk & transaksi riil toko
+ * Memastikan skema lokal siap dan konsisten tanpa menghapus data produk pengguna
  */
 export async function initializeDatabase() {
   const prods = await db.products.toArray();
-  // Deteksi jika browser masih menyimpan data tiruan / mock awal (cth: Bimoli, Rojolele, ID prod_)
-  const hasLegacyDummy = prods.some(
-    (p) =>
-      p.id.startsWith('prod_') ||
-      p.barcode === '899999900101' ||
-      p.barcode === '899999900102' ||
-      p.barcode === '899999900103' ||
-      p.barcode === '899886620022' ||
-      p.name.toLowerCase().includes('bimoli') ||
-      p.name.toLowerCase().includes('rojolele')
-  );
 
-  const isCleaned = localStorage.getItem('as_clean_start_v2');
-  if (!isCleaned || hasLegacyDummy) {
-    console.log('Mengosongkan sistem Anugerah Store agar bersih total seperti sistem baru...');
-    await clearAllStoreData();
-    localStorage.setItem('as_clean_start_v2', 'true');
-    return;
-  }
-
-  // Migration guard: ensure every product has a unit field if missing
+  // Pastikan setiap produk memiliki satuan (unit), default 'pcs'
   for (const p of prods) {
     if (!p.unit) {
       await db.products.update(p.id, { unit: 'pcs' });
@@ -149,7 +130,6 @@ export async function clearAllStoreData() {
 
   // Simpan pengaturan standar bersih
   saveStoreSettings(DEFAULT_SETTINGS);
-  localStorage.setItem('as_clean_start_v1', 'true');
 }
 
 /**

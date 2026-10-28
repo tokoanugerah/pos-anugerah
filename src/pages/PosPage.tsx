@@ -20,6 +20,7 @@ import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { generateId } from '../utils/format';
 import { db, getProductCategories } from '../db';
+import { syncSaleToTurso } from '../db/turso';
 
 interface PosPageProps {
   products: Product[];
@@ -243,6 +244,9 @@ export const PosPage: React.FC<PosPageProps> = ({
           });
         }
       }
+
+      // Sinkronisasi otomatis ke remote database Turso Cloud di background
+      syncSaleToTurso(sale, saleItems).catch((err) => console.warn('Background Turso sale sync failed:', err));
 
       setCart([]);
       setIsPaymentOpen(false);

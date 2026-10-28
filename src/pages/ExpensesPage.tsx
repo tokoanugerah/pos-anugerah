@@ -18,6 +18,7 @@ import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
 import { db } from '../db';
+import { syncExpenseToTurso, deleteExpenseFromTurso } from '../db/turso';
 
 interface ExpensesPageProps {
   products: Product[];
@@ -139,12 +140,13 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       };
 
       await db.expenses.add(newExpense);
+      syncExpenseToTurso(newExpense).catch((err) => console.warn('Background Turso expense sync failed:', err));
       playSuccessBeep();
       setIsModalOpen(false);
       addToast(
         'success',
         'Pengeluaran Berhasil Dicatat',
-        `${finalDescription} (${formatRupiah(formAmount)}) telah ditambahkan ke laporan keuangan.`
+        `${finalDescription} (${formatRupiah(formAmount)}) telah ditambahkan ke laporan keuangan & cloud database.`
       );
       loadExpenses();
       onRefresh();
@@ -164,12 +166,13 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     if (!expenseToDelete) return;
     try {
       await db.expenses.delete(expenseToDelete.id);
+      deleteExpenseFromTurso(expenseToDelete.id).catch((err) => console.warn('Background Turso delete expense failed:', err));
       playKeyClick();
       setIsConfirmDeleteOpen(false);
       addToast(
         'delete',
         'Catatan Pengeluaran Dihapus',
-        `${expenseToDelete.description} (${formatRupiah(expenseToDelete.amount)}) telah dihapus dari pembukuan.`
+        `${expenseToDelete.description} (${formatRupiah(expenseToDelete.amount)}) telah dihapus dari pembukuan & cloud database.`
       );
       setExpenseToDelete(null);
       loadExpenses();

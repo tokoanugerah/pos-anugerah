@@ -166,7 +166,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     if (!expenseToDelete) return;
     try {
       await db.expenses.delete(expenseToDelete.id);
-      deleteExpenseFromTurso(expenseToDelete.id).catch((err) => console.warn('Background Turso delete expense failed:', err));
+      await deleteExpenseFromTurso(expenseToDelete.id);
       playKeyClick();
       setIsConfirmDeleteOpen(false);
       addToast(

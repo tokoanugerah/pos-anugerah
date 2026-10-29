@@ -295,7 +295,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     if (!productToDelete) return;
     try {
       await db.products.delete(productToDelete.id);
-      deleteProductFromTurso(productToDelete.id).catch((err) => console.warn('Background Turso delete failed:', err));
+      await deleteProductFromTurso(productToDelete.id);
       playKeyClick();
       setIsConfirmDeleteOpen(false);
       addToast(

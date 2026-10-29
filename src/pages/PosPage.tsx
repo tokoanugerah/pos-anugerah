@@ -10,17 +10,24 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  Scale,
+  Calculator,
 } from 'lucide-react';
 import type { Product, CartItem, Sale, SaleItem } from '../types';
-import { formatRupiah } from '../utils/format';
+import { formatRupiah, formatQty, generateId } from '../utils/format';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
 import { PaymentModal } from '../components/PaymentModal';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
-import { generateId } from '../utils/format';
 import { db, getProductCategories } from '../db';
 import { syncSaleToTurso } from '../db/turso';
+
+const isWeightOrVolumeUnit = (unit?: string): boolean => {
+  if (!unit) return false;
+  const u = unit.toLowerCase().trim();
+  return ['kg', 'liter', 'gram', 'ml', 'ons'].includes(u);
+};
 
 interface PosPageProps {
   products: Product[];
@@ -48,6 +55,11 @@ export const PosPage: React.FC<PosPageProps> = ({
   const [isConfirmDeleteCartOpen, setIsConfirmDeleteCartOpen] = useState(false);
   const [isConfirmClearCartOpen, setIsConfirmClearCartOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Fractional / Budget Calculator & Direct Editing States
+  const [budgetModalItem, setBudgetModalItem] = useState<CartItem | null>(null);
+  const [budgetAmountInput, setBudgetAmountInput] = useState<string>('5000');
+  const [editingQtyMap, setEditingQtyMap] = useState<Record<string, string>>({});
 
   const addToast = (type: 'success' | 'delete' | 'warning' | 'info', title: string, description?: string) => {
     const id = generateId('toast');
@@ -85,13 +97,13 @@ export const PosPage: React.FC<PosPageProps> = ({
     });
   }, [products, selectedCategory, searchQuery]);
 
-  // Cart calculations
+  // Cart calculations with zero floating-point inaccuracies
   const totalAmount = useMemo(() => {
     return cart.reduce((acc, item) => acc + item.subtotal, 0);
   }, [cart]);
 
   const totalCost = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.product.cost_price * item.quantity, 0);
+    return cart.reduce((acc, item) => acc + Math.round(item.product.cost_price * item.quantity), 0);
   }, [cart]);
 
   const totalItemsCount = useMemo(() => {
@@ -119,11 +131,11 @@ export const PosPage: React.FC<PosPageProps> = ({
 
       if (existingIndex > -1) {
         const currentQty = prevCart[existingIndex].quantity;
-        const newQty = currentQty + qtyToAdd;
+        const newQty = parseFloat((currentQty + qtyToAdd).toFixed(3));
 
         if (newQty > product.stock_quantity) {
           playErrorBeep();
-          showNotification(`Stok maksimum hanya ${product.stock_quantity} ${product.unit || 'pcs'}!`, 'error');
+          showNotification(`Stok maksimum hanya ${formatQty(product.stock_quantity)} ${product.unit || 'pcs'}!`, 'error');
           return prevCart;
         }
 
@@ -132,9 +144,9 @@ export const PosPage: React.FC<PosPageProps> = ({
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: newQty,
-          subtotal: newQty * product.selling_price,
+          subtotal: Math.round(newQty * product.selling_price),
         };
-        showNotification(`${product.name} ditambah (Qty: ${newQty} ${product.unit || 'pcs'})`, 'success');
+        showNotification(`${product.name} ditambah (Qty: ${formatQty(newQty)} ${product.unit || 'pcs'})`, 'success');
         return updated;
       } else {
         playSuccessBeep();
@@ -144,36 +156,93 @@ export const PosPage: React.FC<PosPageProps> = ({
           {
             product,
             quantity: qtyToAdd,
-            subtotal: qtyToAdd * product.selling_price,
+            subtotal: Math.round(qtyToAdd * product.selling_price),
           },
         ];
       }
     });
   };
 
-  // Update Cart Quantity
-  const handleUpdateQuantity = (productId: string, delta: number) => {
+  // Stepper quantity adjustment (+ / -) supporting intelligent fractional steps
+  const handleStepQuantity = (item: CartItem, direction: 1 | -1) => {
     playKeyClick();
+    const isBulk = isWeightOrVolumeUnit(item.product.unit);
+    let step = 1;
+
+    if (isBulk) {
+      if (direction === -1) {
+        if (item.quantity <= 1 && item.quantity > 0.25) {
+          step = 0.25;
+        } else if (item.quantity <= 0.25) {
+          handlePromptRemoveFromCart(item);
+          return;
+        } else {
+          step = 1;
+        }
+      } else {
+        if (item.quantity < 1) {
+          step = 0.25;
+        } else {
+          step = 1;
+        }
+      }
+    }
+
+    const rawNewQty = item.quantity + direction * step;
+    const newQty = parseFloat(rawNewQty.toFixed(3));
+
+    if (newQty <= 0) {
+      handlePromptRemoveFromCart(item);
+      return;
+    }
+
+    if (newQty > item.product.stock_quantity) {
+      playErrorBeep();
+      showNotification(
+        `Batas stok tercapai (${formatQty(item.product.stock_quantity)} ${item.product.unit || 'pcs'})`,
+        'error'
+      );
+      return;
+    }
+
+    setCart((prevCart) =>
+      prevCart.map((c) => {
+        if (c.product.id === item.product.id) {
+          return {
+            ...c,
+            quantity: newQty,
+            subtotal: Math.round(newQty * c.product.selling_price),
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  // Set exact quantity (from Quick Fraction chips or Budget Calculator)
+  const handleSetExactQuantity = (productId: string, targetQty: number) => {
     setCart((prevCart) => {
-      return prevCart
-        .map((item) => {
-          if (item.product.id === productId) {
-            const newQty = item.quantity + delta;
-            if (newQty <= 0) return null;
-            if (newQty > item.product.stock_quantity) {
-              playErrorBeep();
-              showNotification(`Batas stok tercapai (${item.product.stock_quantity} ${item.product.unit || 'pcs'})`, 'error');
-              return item;
-            }
-            return {
-              ...item,
-              quantity: newQty,
-              subtotal: newQty * item.product.selling_price,
-            };
+      return prevCart.map((c) => {
+        if (c.product.id === productId) {
+          const roundedQty = parseFloat(targetQty.toFixed(3));
+          if (roundedQty <= 0) return c;
+          if (roundedQty > c.product.stock_quantity) {
+            playErrorBeep();
+            showNotification(
+              `Stok maksimum hanya ${formatQty(c.product.stock_quantity)} ${c.product.unit || 'pcs'}!`,
+              'error'
+            );
+            return c;
           }
-          return item;
-        })
-        .filter(Boolean) as CartItem[];
+          playKeyClick();
+          return {
+            ...c,
+            quantity: roundedQty,
+            subtotal: Math.round(roundedQty * c.product.selling_price),
+          };
+        }
+        return c;
+      });
     });
   };
 
@@ -233,11 +302,11 @@ export const PosPage: React.FC<PosPageProps> = ({
       await db.sales.add(sale);
       await db.sale_items.bulkAdd(saleItems);
 
-      // Reduce stock quantity in Dexie.js
+      // Reduce stock quantity in Dexie.js (with clean 2-decimal rounding)
       for (const item of saleItems) {
         const prod = await db.products.get(item.product_id);
         if (prod) {
-          const newStock = Math.max(0, prod.stock_quantity - item.quantity);
+          const newStock = Math.max(0, Number((prod.stock_quantity - item.quantity).toFixed(2)));
           await db.products.update(item.product_id, {
             stock_quantity: newStock,
             updated_at: new Date().toISOString(),
@@ -375,7 +444,7 @@ export const PosPage: React.FC<PosPageProps> = ({
                         </span>
                       ) : isLowStock ? (
                         <span className="absolute top-2 right-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-status-warningBg text-status-warningText shadow-sm">
-                          Sisa {p.stock_quantity}
+                          Sisa {formatQty(p.stock_quantity)}
                         </span>
                       ) : null}
                     </div>
@@ -393,7 +462,7 @@ export const PosPage: React.FC<PosPageProps> = ({
                         {formatRupiah(p.selling_price)}
                       </span>
                       <span className="text-[10px] text-ink-subtle">
-                        /{p.unit || 'pcs'} • Stok: {p.stock_quantity}
+                        /{p.unit || 'pcs'} • Stok: {formatQty(p.stock_quantity)}
                       </span>
                     </div>
                     <button
@@ -463,7 +532,7 @@ export const PosPage: React.FC<PosPageProps> = ({
                 <div>
                   <h3 className="font-extrabold text-lg text-ink">Keranjang Kasir</h3>
                   <p className="text-xs text-ink-muted">
-                    {cart.length} ragam barang ({totalItemsCount} total item)
+                    {cart.length} ragam barang ({formatQty(totalItemsCount)} total item)
                   </p>
                 </div>
               </div>
@@ -485,10 +554,12 @@ export const PosPage: React.FC<PosPageProps> = ({
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {cart.map((item) => {
                 const itemUnit = item.product.unit || 'pcs';
+                const isBulk = isWeightOrVolumeUnit(itemUnit);
+
                 return (
                   <div
                     key={item.product.id}
-                    className="bg-cream-50 p-3.5 rounded-2xl border border-cream-300 flex flex-col gap-2 hover:border-forest/30 transition-all"
+                    className="bg-cream-50 p-3.5 rounded-2xl border border-cream-300 flex flex-col gap-2.5 hover:border-forest/30 transition-all shadow-sm"
                   >
                     <div className="flex items-center gap-3">
                       {/* Product Thumbnail */}
@@ -523,39 +594,124 @@ export const PosPage: React.FC<PosPageProps> = ({
                       </button>
                     </div>
 
-                    {/* Quantity Controls with explicit unit display */}
+                    {/* Quantity Controls: Stepper + Direct Numeric/Decimal Input Field */}
                     <div className="flex items-center justify-between pt-2 border-t border-cream-200">
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                          className="w-8 h-8 rounded-xl bg-white border border-cream-300 text-ink font-bold flex items-center justify-center hover:bg-cream-200 active:scale-95 transition-all"
+                          onClick={() => handleStepQuantity(item, -1)}
+                          className="w-8 h-8 rounded-xl bg-white border border-cream-300 text-ink font-bold flex items-center justify-center hover:bg-cream-200 active:scale-95 transition-all shadow-sm"
+                          title="Kurangi kuantitas"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
 
-                        <div className="px-2.5 py-1 bg-white rounded-xl border border-cream-200 flex items-center gap-1">
-                          <span className="font-mono font-black text-sm text-ink">
-                            {item.quantity}
-                          </span>
-                          <span className="text-xs font-semibold text-ink-muted">
+                        {/* Direct Editable Quantity Input Field */}
+                        <div className="px-2 py-1 bg-white rounded-xl border-2 border-cream-300 focus-within:border-forest flex items-center gap-1 shadow-inner transition-all min-w-[78px] justify-center">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={editingQtyMap[item.product.id] !== undefined ? editingQtyMap[item.product.id] : formatQty(item.quantity)}
+                            onFocus={(e) => {
+                              setEditingQtyMap((prev) => ({ ...prev, [item.product.id]: String(item.quantity) }));
+                              e.target.select();
+                            }}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+                              const parts = val.split('.');
+                              const cleanVal = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : val;
+                              setEditingQtyMap((prev) => ({ ...prev, [item.product.id]: cleanVal }));
+                            }}
+                            onBlur={() => {
+                              const valStr = editingQtyMap[item.product.id];
+                              if (valStr !== undefined) {
+                                const parsed = parseFloat(valStr);
+                                if (!isNaN(parsed) && parsed > 0) {
+                                  handleSetExactQuantity(item.product.id, parsed);
+                                }
+                                setEditingQtyMap((prev) => {
+                                  const copy = { ...prev };
+                                  delete copy[item.product.id];
+                                  return copy;
+                                });
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-12 text-center font-mono font-black text-sm text-ink bg-transparent focus:outline-none"
+                            title="Klik untuk ketik langsung jumlah / desimal eceran"
+                          />
+                          <span className="text-xs font-bold text-ink-muted select-none">
                             {itemUnit}
                           </span>
                         </div>
 
                         <button
                           type="button"
-                          onClick={() => handleUpdateQuantity(item.product.id, 1)}
-                          className="w-8 h-8 rounded-xl bg-forest text-white font-bold flex items-center justify-center hover:bg-forest-light active:scale-95 transition-all"
+                          onClick={() => handleStepQuantity(item, 1)}
+                          className="w-8 h-8 rounded-xl bg-forest text-white font-bold flex items-center justify-center hover:bg-forest-light active:scale-95 transition-all shadow-sm"
+                          title="Tambah kuantitas"
                         >
-                          <Plus className="w-4 h-4" />
+                          <Plus className="w-4 h-4 stroke-[2.5]" />
                         </button>
                       </div>
 
-                      <span className="font-mono font-extrabold text-base text-forest">
-                        {formatRupiah(item.subtotal)}
-                      </span>
+                      <div className="text-right">
+                        <span className="font-mono font-extrabold text-base text-forest block">
+                          {formatRupiah(item.subtotal)}
+                        </span>
+                      </div>
                     </div>
+
+                    {/* Quick Fraction Chips & Budget Calculator for Bulk/Weighed items */}
+                    {isBulk && (
+                      <div className="pt-1.5 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-extrabold text-ink-subtle uppercase tracking-wider mr-0.5">
+                          Takaran:
+                        </span>
+                        {[
+                          { label: '¼ ' + itemUnit, qty: 0.25 },
+                          { label: '½ ' + itemUnit, qty: 0.5 },
+                          { label: '¾ ' + itemUnit, qty: 0.75 },
+                          { label: '1 ' + itemUnit, qty: 1 },
+                          { label: '2 ' + itemUnit, qty: 2 },
+                        ].map((frac) => {
+                          const isSelected = Math.abs(item.quantity - frac.qty) < 0.001;
+                          return (
+                            <button
+                              key={frac.label}
+                              type="button"
+                              onClick={() => handleSetExactQuantity(item.product.id, frac.qty)}
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-black border transition-all ${
+                                isSelected
+                                  ? 'bg-forest text-amber border-forest shadow-sm scale-105'
+                                  : 'bg-white hover:bg-cream-200 text-ink border-cream-300'
+                              }`}
+                            >
+                              {frac.label}
+                            </button>
+                          );
+                        })}
+
+                        {/* Tombol Beli Berdasarkan Rp (Budget) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playKeyClick();
+                            setBudgetModalItem(item);
+                            setBudgetAmountInput('5000');
+                          }}
+                          className="px-2 py-0.5 rounded-lg text-[11px] font-black bg-amber/20 hover:bg-amber text-forest border border-amber/60 flex items-center gap-1 transition-all shadow-sm active:scale-95"
+                          title="Beli dengan nominal uang tertentu (cth: beli 5 ribu)"
+                        >
+                          <Calculator className="w-3 h-3 text-forest" />
+                          <span>Beli Rp...</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -578,7 +734,7 @@ export const PosPage: React.FC<PosPageProps> = ({
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold text-ink-muted">
                   <span>Jumlah Total Barang:</span>
-                  <span>{totalItemsCount} item ({cart.length} ragam)</span>
+                  <span>{formatQty(totalItemsCount)} total item ({cart.length} ragam)</span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-sm font-extrabold text-ink uppercase tracking-wide">
@@ -680,7 +836,7 @@ export const PosPage: React.FC<PosPageProps> = ({
         description="Seluruh belanjaan kasir saat ini akan dibatalkan dan dikosongkan secara bersih:"
         details={[
           { label: 'Ragam Barang', value: `${cart.length} jenis produk` },
-          { label: 'Total Unit Barang', value: `${totalItemsCount} unit fisik` },
+          { label: 'Total Kuantitas Barang', value: `${formatQty(totalItemsCount)} total takaran` },
           {
             label: 'Total Tagihan Saat Ini',
             value: formatRupiah(totalAmount),
@@ -690,6 +846,164 @@ export const PosPage: React.FC<PosPageProps> = ({
         confirmText="Ya, Kosongkan Keranjang"
         cancelText="Kembali ke Kasir"
       />
+
+      {/* Modal Hitung Takaran dari Budget Rupiah */}
+      {budgetModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-forest-dark/80 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-card w-full max-w-md rounded-3xl p-6 shadow-modal border-2 border-cream-300 relative my-6">
+            <div className="flex items-center justify-between pb-3.5 border-b border-cream-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-forest text-amber flex items-center justify-center shadow-sm">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-ink">Beli Berdasarkan Rupiah</h3>
+                  <p className="text-[11px] text-ink-muted">Hitung takaran timbangan otomatis</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBudgetModalItem(null)}
+                className="p-2 rounded-xl bg-cream-100 hover:bg-cream-200 text-ink transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {/* Product Info */}
+              <div className="p-3.5 bg-cream-100 rounded-2xl border border-cream-200 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-ink text-sm block">{budgetModalItem.product.name}</span>
+                  <span className="text-xs text-ink-muted font-mono">
+                    Harga: {formatRupiah(budgetModalItem.product.selling_price)} / {budgetModalItem.product.unit || 'pcs'}
+                  </span>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 bg-white rounded-xl border border-cream-300 text-forest">
+                  Stok: {formatQty(budgetModalItem.product.stock_quantity)} {budgetModalItem.product.unit || 'pcs'}
+                </span>
+              </div>
+
+              {/* Rupiah Input */}
+              <div>
+                <label className="text-xs font-bold text-ink-muted uppercase tracking-wider block mb-1.5">
+                  Nominal Uang Pembelian (Rp):
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-extrabold text-forest text-base">
+                    Rp
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    value={budgetAmountInput}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/[^0-9]/g, '');
+                      setBudgetAmountInput(clean);
+                    }}
+                    placeholder="Contoh: 5000"
+                    className="w-full pl-12 pr-4 py-3 bg-cream-50 border-2 border-forest/40 rounded-2xl font-mono font-extrabold text-lg text-forest focus:outline-none focus:ring-4 focus:ring-amber/30"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div>
+                <span className="text-[11px] font-bold text-ink-muted block mb-1.5">Pilihan Cepat Nominal:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[2000, 3000, 5000, 10000, 15000, 20000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => {
+                        playKeyClick();
+                        setBudgetAmountInput(String(amt));
+                      }}
+                      className={`py-2 px-3 rounded-xl font-mono font-bold text-xs border transition-all ${
+                        budgetAmountInput === String(amt)
+                          ? 'bg-forest text-amber border-forest shadow-sm scale-105'
+                          : 'bg-white hover:bg-cream-100 text-ink border-cream-300'
+                      }`}
+                    >
+                      {formatRupiah(amt)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Live Preview Box */}
+              {(() => {
+                const enteredBudget = Number(budgetAmountInput) || 0;
+                const unitPrice = budgetModalItem.product.selling_price;
+                const calculatedQty = unitPrice > 0 ? parseFloat((enteredBudget / unitPrice).toFixed(3)) : 0;
+                const unit = budgetModalItem.product.unit || 'pcs';
+                const isOverStock = calculatedQty > budgetModalItem.product.stock_quantity;
+
+                return (
+                  <div className="p-4 bg-forest/5 rounded-2xl border-2 border-forest/20 space-y-2">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs font-bold text-ink-muted">Takaran Didapat:</span>
+                      <span className="font-mono font-black text-xl text-forest">
+                        {formatQty(calculatedQty)} {unit}
+                      </span>
+                    </div>
+
+                    {unit.toLowerCase() === 'kg' && (
+                      <div className="flex justify-between text-xs text-ink-subtle">
+                        <span>Setara Berat:</span>
+                        <span className="font-mono font-bold text-forest">{Math.round(calculatedQty * 1000)} gram</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-xs font-bold text-ink pt-1.5 border-t border-forest/15">
+                      <span>Total Tagihan:</span>
+                      <span className="font-mono text-forest font-extrabold text-sm">{formatRupiah(enteredBudget)}</span>
+                    </div>
+
+                    {isOverStock && (
+                      <p className="text-xs font-bold text-status-dangerText bg-status-dangerBg p-2.5 rounded-xl border border-status-dangerText/30">
+                        Peringatan: Takaran ({formatQty(calculatedQty)} {unit}) melebihi stok yang ada ({formatQty(budgetModalItem.product.stock_quantity)} {unit})!
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setBudgetModalItem(null)}
+                  className="flex-1 py-3 bg-cream-200 hover:bg-cream-300 text-ink font-bold rounded-2xl text-sm transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !Number(budgetAmountInput) ||
+                    (budgetModalItem.product.selling_price > 0 &&
+                      Number(budgetAmountInput) / budgetModalItem.product.selling_price > budgetModalItem.product.stock_quantity)
+                  }
+                  onClick={() => {
+                    const enteredBudget = Number(budgetAmountInput) || 0;
+                    const unitPrice = budgetModalItem.product.selling_price;
+                    if (unitPrice > 0 && enteredBudget > 0) {
+                      const calculatedQty = parseFloat((enteredBudget / unitPrice).toFixed(3));
+                      handleSetExactQuantity(budgetModalItem.product.id, calculatedQty);
+                      setBudgetModalItem(null);
+                    }
+                  }}
+                  className="flex-1 py-3 bg-amber hover:bg-amber-hover disabled:bg-cream-300 disabled:text-ink-subtle text-forest font-extrabold rounded-2xl text-sm shadow-md transition-all active:scale-95"
+                >
+                  Terapkan Takaran
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Feedback Toast Alerts */}
       <ToastAlert toasts={toasts} onDismiss={handleDismissToast} />

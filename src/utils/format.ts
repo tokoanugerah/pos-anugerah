@@ -15,6 +15,18 @@ export function formatNumber(amount: number): string {
 }
 
 /**
+ * Format jumlah/kuantitas barang (mendukung pecahan eceran desimal):
+ * Contoh: 1 -> "1", 0.5 -> "0,5", 0.25 -> "0,25", 0.75 -> "0,75", 1.5 -> "1,5"
+ */
+export function formatQty(qty: number): string {
+  if (isNaN(qty) || qty === null || qty === undefined) return '0';
+  if (Number.isInteger(qty)) return qty.toString();
+  // Untuk angka desimal, batasi hingga 3 angka di belakang koma dan hapus trailing zero
+  const trimmed = parseFloat(qty.toFixed(3));
+  return trimmed.toString().replace('.', ',');
+}
+
+/**
  * Format tanggal lengkap Bahasa Indonesia: "Rabu, 20 Oktober 2026, 16:30"
  */
 export function formatDateIndo(dateInput: string | Date): string {

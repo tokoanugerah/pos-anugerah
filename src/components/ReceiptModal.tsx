@@ -1,7 +1,7 @@
 import React from 'react';
 import { Printer, CheckCircle2, X } from 'lucide-react';
 import type { Sale, SaleItem } from '../types';
-import { formatRupiah, formatDateIndo } from '../utils/format';
+import { formatRupiah, formatDateIndo, formatQty } from '../utils/format';
 import { getStoreSettings } from '../db';
 
 interface ReceiptModalProps {
@@ -81,7 +81,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <div className="font-semibold text-gray-900">{item.product_name}</div>
                 <div className="flex justify-between text-gray-600">
                   <span>
-                    {item.quantity} x {formatRupiah(item.unit_price)}
+                    {formatQty(item.quantity)} {item.unit ? `${item.unit} ` : ''}x {formatRupiah(item.unit_price)}
                   </span>
                   <span className="font-bold text-gray-900">{formatRupiah(item.subtotal)}</span>
                 </div>

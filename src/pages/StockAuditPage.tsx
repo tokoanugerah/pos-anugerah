@@ -10,7 +10,7 @@ import {
   Boxes,
 } from 'lucide-react';
 import type { Product, StockAudit } from '../types';
-import { formatDateIndo, generateId } from '../utils/format';
+import { formatDateIndo, generateId, formatQty } from '../utils/format';
 import { playSuccessBeep, playErrorBeep, playKeyClick } from '../utils/sound';
 import { db } from '../db';
 import { syncStockAuditToTurso } from '../db/turso';
@@ -65,7 +65,7 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
     );
   }, [products, searchQuery]);
 
-  const physicalCount = Number(physicalCountStr) || 0;
+  const physicalCount = parseFloat(physicalCountStr) || 0;
 
   const handleSaveAudit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,19 +219,24 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
                 <div className="p-4 bg-cream-100 rounded-2xl border border-cream-300 text-center">
                   <p className="text-[11px] font-bold text-ink-muted uppercase">Stok Komputer</p>
                   <p className="text-2xl sm:text-3xl font-mono font-black text-ink mt-1">
-                    {selectedProduct.stock_quantity}
+                    {formatQty(selectedProduct.stock_quantity)}
                   </p>
                   <p className="text-[10px] text-ink-muted">{selectedProduct.unit || 'pcs'} tercatat</p>
                 </div>
 
-                {/* Physical Stock Input with Clean Numeric Entry (No sticky zeroes) */}
+                {/* Physical Stock Input with Clean Decimal Entry */}
                 <div className="p-4 bg-amber/20 rounded-2xl border-2 border-amber text-center">
                   <p className="text-[11px] font-bold text-forest uppercase">Riil Fisik di Rak</p>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     value={physicalCountStr}
-                    onChange={(e) => setPhysicalCountStr(e.target.value.replace(/[^0-9]/g, ''))}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+                      const parts = val.split('.');
+                      if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                      setPhysicalCountStr(val);
+                    }}
                     placeholder="0"
                     className="w-full text-center text-2xl sm:text-3xl font-mono font-black text-forest bg-transparent focus:outline-none"
                     autoFocus
@@ -370,12 +375,12 @@ export const StockAuditPage: React.FC<StockAuditPageProps> = ({
                           : 'bg-status-warningBg text-status-warningText'
                       }`}
                     >
-                      {item.difference > 0 ? `+${item.difference}` : item.difference}
+                      {item.difference > 0 ? `+${formatQty(item.difference)}` : formatQty(item.difference)}
                     </span>
                   </div>
 
                   <div className="flex justify-between text-ink-muted text-[11px]">
-                    <span>Sistem: {item.system_stock} | Fisik: {item.physical_stock}</span>
+                    <span>Sistem: {formatQty(item.system_stock)} | Fisik: {formatQty(item.physical_stock)}</span>
                     <span>{formatDateIndo(item.audit_date)}</span>
                   </div>
 

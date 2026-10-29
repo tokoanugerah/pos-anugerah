@@ -14,7 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { Product } from '../types';
-import { formatRupiah, formatNumber, generateId } from '../utils/format';
+import { formatRupiah, formatQty, generateId } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
@@ -190,9 +190,19 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     setter(val);
   };
 
+  // Clean decimal input handler: allows numbers with '.' or ',' for fractional weight/volume
+  const handleDecimalInput = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const parts = val.split('.');
+    if (parts.length > 2) {
+      val = parts[0] + '.' + parts.slice(1).join('');
+    }
+    setter(val);
+  };
+
   const formCostPrice = Number(formCostPriceStr) || 0;
   const formSellingPrice = Number(formSellingPriceStr) || 0;
-  const formStockQuantity = Number(formStockQuantityStr) || 0;
+  const formStockQuantity = parseFloat(formStockQuantityStr) || 0;
   const formMinStockAlert = Number(formMinStockAlertStr) || 1;
 
   // Prompt Save Product: if editing, triggers ActionConfirmModal first
@@ -535,7 +545,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
 
                     {/* Stock */}
                     <td className="py-4 px-4 text-center font-mono font-extrabold text-base text-ink">
-                      {formatNumber(p.stock_quantity)}
+                      {formatQty(p.stock_quantity)}
                     </td>
 
                     {/* Status Badge */}
@@ -873,10 +883,10 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     required
                     value={formStockQuantityStr}
-                    onChange={handleNumericInput(setFormStockQuantityStr)}
+                    onChange={handleDecimalInput(setFormStockQuantityStr)}
                     placeholder="0"
                     className="w-full px-4 py-3 bg-cream-50 border border-cream-300 rounded-2xl font-mono font-bold text-sm text-ink focus:outline-none focus:ring-2 focus:ring-forest"
                   />

@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { Sale, SaleItem, Product } from '../types';
-import { formatRupiah, formatNumber, formatDateIndo } from '../utils/format';
+import { formatRupiah, formatNumber, formatQty, formatDateIndo } from '../utils/format';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { db } from '../db';
 
@@ -482,7 +482,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       </p>
                     </div>
                     <span className="font-mono font-bold px-2 py-1 rounded-xl bg-status-warningBg text-status-warningText whitespace-nowrap">
-                      {p.stock_quantity} {p.unit || 'pcs'}
+                      {formatQty(p.stock_quantity)} {p.unit || 'pcs'}
                     </span>
                   </div>
                 );

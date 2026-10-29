@@ -13,7 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { Expense, ExpenseCategory, Product } from '../types';
-import { formatRupiah, formatDateIndo, generateId } from '../utils/format';
+import { formatRupiah, formatDateIndo, generateId, formatQty } from '../utils/format';
 import { playSuccessBeep, playKeyClick, playErrorBeep } from '../utils/sound';
 import { ActionConfirmModal } from '../components/ActionConfirmModal';
 import { ToastAlert, type ToastMessage } from '../components/ToastAlert';
@@ -94,7 +94,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     const formAmount = Number(formAmountStr) || 0;
-    const restockQty = Number(restockQtyStr) || 0;
+    const restockQty = parseFloat(restockQtyStr) || 0;
 
     if (formAmount <= 0) {
       playErrorBeep();
@@ -112,7 +112,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       if (formCategory === 'KULAKAN_STOK' && selectedRestockProductId) {
         const prod = products.find((p) => p.id === selectedRestockProductId);
         if (prod) {
-          const newStock = prod.stock_quantity + restockQty;
+          const newStock = Number((prod.stock_quantity + restockQty).toFixed(2));
           await db.products.update(prod.id, {
             stock_quantity: newStock,
             updated_at: nowIso,
@@ -120,9 +120,9 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
           const itemUnit = prod.unit || 'pcs';
           if (!finalDescription) {
-            finalDescription = `Kulakan Restok: ${prod.name} (+${restockQty} ${itemUnit})`;
+            finalDescription = `Kulakan Restok: ${prod.name} (+${formatQty(restockQty)} ${itemUnit})`;
           } else {
-            finalDescription += ` (${prod.name} +${restockQty} ${itemUnit})`;
+            finalDescription += ` (${prod.name} +${formatQty(restockQty)} ${itemUnit})`;
           }
         }
       }
@@ -424,14 +424,16 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
                       </label>
                       <input
                         type="text"
-                        inputMode="numeric"
+                        inputMode="decimal"
                         value={restockQtyStr}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, '');
+                          let val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+                          const parts = val.split('.');
+                          if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
                           setRestockQtyStr(val);
                           const prod = products.find((p) => p.id === selectedRestockProductId);
                           if (prod) {
-                            setFormAmountStr(String(prod.cost_price * (Number(val) || 0)));
+                            setFormAmountStr(String(Math.round(prod.cost_price * (parseFloat(val) || 0))));
                           }
                         }}
                         placeholder="0"

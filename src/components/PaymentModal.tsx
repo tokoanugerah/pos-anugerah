@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Banknote, QrCode, Building2, Check, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { CartItem, PaymentMethod, Sale, SaleItem } from '../types';
-import { formatRupiah, generateReceiptNumber, generateId } from '../utils/format';
+import { formatRupiah, generateReceiptNumber, generateId, formatQty } from '../utils/format';
 import { playCashChime, playErrorBeep, playKeyClick } from '../utils/sound';
 import { getStoreSettings } from '../db';
 
@@ -99,11 +99,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       product_id: c.product.id,
       product_name: c.product.name,
       quantity: c.quantity,
+      unit: c.product.unit || 'pcs',
       unit_cost: c.product.cost_price,
       unit_price: c.product.selling_price,
-      subtotal: c.subtotal,
-      subtotal_cost: c.product.cost_price * c.quantity,
-      subtotal_profit: c.subtotal - c.product.cost_price * c.quantity,
+      subtotal: Math.round(c.subtotal),
+      subtotal_cost: Math.round(c.product.cost_price * c.quantity),
+      subtotal_profit: Math.round(c.subtotal - c.product.cost_price * c.quantity),
     }));
 
     // Audio & Confetti Celebration
@@ -147,7 +148,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           <div className="text-right">
             <span className="text-xs text-ink-muted bg-white border border-cream-300 px-3 py-1 rounded-xl">
-              {cartItems.length} Ragam Barang ({cartItems.reduce((acc, c) => acc + c.quantity, 0)} Total Pcs)
+              {cartItems.length} Ragam Barang ({formatQty(cartItems.reduce((acc, c) => acc + c.quantity, 0))} Total Item)
             </span>
           </div>
         </div>
